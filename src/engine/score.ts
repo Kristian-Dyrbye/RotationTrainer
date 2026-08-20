@@ -28,6 +28,7 @@ export interface ScoreReport {
   totalDeadTime: number
   casts: GradedCast[]
   damageBySpell: { spellId: string; total: number; casts: number }[]
+  dotUptimes: { id: string; name: string; icon?: string; uptime: number; oracleUptime: number }[]
 }
 
 export function buildReport(player: Sim, oracle: Sim): ScoreReport {
@@ -62,6 +63,16 @@ export function buildReport(player: Sim, oracle: Sim): ScoreReport {
   const oracleDps = oracle.totalDamage / duration
   const score = Math.round(100 * Math.min(1, oracleDps > 0 ? playerDps / oracleDps : 0))
 
+  const dotUptimes = spec.auras
+    .filter(a => a.debuff && a.tick)
+    .map(a => ({
+      id: a.id,
+      name: a.name,
+      icon: a.icon,
+      uptime: Math.min(1, player.debuffUptime(a.id) / duration),
+      oracleUptime: Math.min(1, oracle.debuffUptime(a.id) / duration),
+    }))
+
   const bySpell = new Map<string, { total: number; casts: number }>()
   for (const d of player.damageLog) {
     const e = bySpell.get(d.spellId) ?? { total: 0, casts: 0 }
@@ -83,6 +94,7 @@ export function buildReport(player: Sim, oracle: Sim): ScoreReport {
     missCasts: miss,
     totalDeadTime,
     casts,
+    dotUptimes,
     damageBySpell: [...bySpell.entries()]
       .map(([spellId, v]) => ({ spellId, ...v }))
       .sort((a, b) => b.total - a.total),

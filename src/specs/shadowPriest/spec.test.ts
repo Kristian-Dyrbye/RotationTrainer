@@ -28,7 +28,7 @@ describe('shadow priest oracle', () => {
   it('uses the full kit', () => {
     const sim = runOracle(shadowPriest, CFG)
     const used = new Set(sim.damageLog.map(d => d.spellId))
-    for (const id of ['mind_blast', 'shadow_word_madness', 'void_volley', 'tentacle_slam', 'halo', 'mind_flay', 'Shadowy Apparition']) {
+    for (const id of ['mind_blast', 'shadow_word_madness', 'Void Volley', 'tentacle_slam', 'halo', 'mind_flay', 'Mind Flay: Insanity', 'Shadowy Apparition']) {
       expect(used.has(id), id).toBe(true)
     }
   })
@@ -64,19 +64,46 @@ describe('shadow priest mechanics', () => {
     expect(sim.stacks('player', 'mind_devourer')).toBe(0)
   })
 
-  it('voidform grants void volley charges and buffs damage', () => {
+  it('void volley charges transform the voidform button', () => {
     const sim = new Sim(shadowPriest, CFG)
     sim.gradeCasts = false
     sim.beginCombat()
-    expect(sim.press('void_volley')).toMatch(/needs a Void Volley charge/)
     sim.press('voidform')
-    sim.advance(1.5)
+    sim.advance(2)
     expect(sim.stacks('player', 'void_volley_charge')).toBe(3)
-    expect(sim.auraRemains('player', 'voidform')).toBeGreaterThan(18)
-    sim.advance(3)
-    expect(sim.press('void_volley')).toBe('cast')
+    expect(sim.auraRemains('player', 'voidform')).toBeGreaterThan(17)
+    // pressing the same button now fires Void Volley — despite the 2min cooldown
+    expect(sim.cooldownRemains('voidform')).toBeGreaterThan(100)
+    expect(sim.press('voidform')).toBe('cast')
     expect(sim.stacks('player', 'void_volley_charge')).toBe(2)
     expect(sim.insanity).toBeGreaterThanOrEqual(10)
+    // the volley press did not touch the underlying voidform cooldown
+    expect(sim.cooldownRemains('voidform')).toBeLessThan(119)
+    expect(sim.cooldownRemains('voidform')).toBeGreaterThan(100)
+    // spend the rest; the button reverts to Voidform (on cooldown)
+    sim.advance(sim.time + 2)
+    sim.press('voidform')
+    sim.advance(sim.time + 2)
+    sim.press('voidform')
+    sim.advance(sim.time + 2)
+    expect(sim.stacks('player', 'void_volley_charge')).toBe(0)
+    expect(sim.press('voidform')).toBe('on cooldown')
+  })
+
+  it('a 4pc volley charge is pressable while voidform is deep on cooldown', () => {
+    const sim = new Sim(shadowPriest, CFG)
+    sim.gradeCasts = false
+    sim.beginCombat()
+    sim.press('voidform')
+    sim.advance(2)
+    // burn the voidform charges
+    for (let i = 0; i < 3; i++) { sim.press('voidform'); sim.advance(sim.time + 2) }
+    expect(sim.stacks('player', 'void_volley_charge')).toBe(0)
+    sim.press('tentacle_slam') // S2 4pc grants a free Void Volley
+    sim.advance(sim.time + 2)
+    expect(sim.stacks('player', 'void_volley_charge')).toBe(1)
+    expect(sim.press('voidform')).toBe('cast') // fires the volley, not Voidform
+    expect(sim.stacks('player', 'void_volley_charge')).toBe(0)
   })
 
   it('tentacle slam applies vampiric touch and a 4pc volley charge', () => {
@@ -99,6 +126,26 @@ describe('shadow priest mechanics', () => {
     sim.insanity = 100
     sim.press('shadow_word_madness') // 4s remaining -> 6 + 4
     expect(sim.auraRemains('target', 'swm_dot')).toBeCloseTo(10, 1)
+  })
+
+  it('a proc transforms the Mind Flay button into Mind Flay: Insanity', () => {
+    const sim = new Sim(shadowPriest, CFG)
+    sim.gradeCasts = false
+    sim.beginCombat()
+    sim.applyAura('player', 'mfi_charge', { stacks: 1 })
+    expect(sim.press('mind_flay')).toBe('cast')
+    expect(sim.stacks('player', 'mfi_charge')).toBe(0) // proc consumed at cast start
+    sim.advance(sim.time + 2) // 1.5s channel (hasted) fully done
+    const mfi = sim.damageLog.filter(d => d.spellId === 'Mind Flay: Insanity')
+    expect(mfi.length).toBe(2)
+    expect(sim.damageLog.some(d => d.spellId === 'mind_flay')).toBe(false)
+    expect(sim.insanity).toBe(8)
+
+    // without the proc, the same button channels plain Mind Flay
+    sim.advance(sim.time + 2)
+    expect(sim.press('mind_flay')).toBe('cast')
+    sim.advance(sim.time + 5)
+    expect(sim.damageLog.filter(d => d.spellId === 'mind_flay').length).toBe(6)
   })
 
   it('power infusion casts off-GCD, even mid-cast and mid-GCD', () => {

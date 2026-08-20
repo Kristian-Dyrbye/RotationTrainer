@@ -50,9 +50,21 @@ function grantVoidVolley(s: SimAPI, n: number) {
   s.applyAura('player', 'void_volley_charge', { stacks: n })
 }
 
+/** is the Mind Flay button currently in its Insanity form? (proc up, or channeling it) */
+function mfiActive(s: SimAPI): boolean {
+  if (s.casting?.abilityId === 'mind_flay') return s.data.mfi_cast === 1
+  return s.stacks('player', 'mfi_charge') > 0
+}
+
+/** is the Voidform button currently in its Void Volley form? */
+function volleyReady(s: SimAPI): boolean {
+  return s.stacks('player', 'void_volley_charge') > 0
+}
+
 export const shadowPriest: SpecConfig = {
   name: 'Shadow Priest',
   specId: 'priest-shadow',
+  specIcon: 'spell_shadow_shadowform',
   resourceName: 'Insanity',
   resourceMax: 100,
   startingResource: 0,
@@ -216,37 +228,37 @@ export const shadowPriest: SpecConfig = {
       },
     },
     {
+      // One button, as in game: a Mind Flay: Insanity proc transforms it.
       id: 'mind_flay',
       name: 'Mind Flay',
       icon: 'spell_shadow_siphonmana',
       spellId: 15407,
-      channel: {
-        duration: 4.5,
-        ticks: 6,
-        hasted: true,
-        onTick: (s) => {
-          s.damage('mind_flay', 7.2072 / 6)
-          s.gain(3, 'mind_flay')
-        },
+      displayName: (s) => (mfiActive(s) ? 'Mind Flay: Insanity' : 'Mind Flay'),
+      displayIcon: (s) => (mfiActive(s) ? 'spell_fire_twilightflamebreath' : 'spell_shadow_siphonmana'),
+      displayStacks: (s) => s.stacks('player', 'mfi_charge'),
+      onCastStart: (s) => {
+        s.data.mfi_cast = s.stacks('player', 'mfi_charge') > 0 ? 1 : 0
+        if (s.data.mfi_cast) s.consumeStack('player', 'mfi_charge')
       },
-      onResolve: () => {},
-    },
-    {
-      id: 'mind_flay_insanity',
-      name: 'Mind Flay: Insanity',
-      icon: 'spell_fire_twilightflamebreath',
-      spellId: 391403,
-      usable: (s) => (s.stacks('player', 'mfi_charge') > 0 ? true : 'needs Mind Flay: Insanity (cast Halo)'),
-      channel: {
-        duration: 1.5,
-        ticks: 2,
-        hasted: true,
-        onTick: (s) => {
-          s.damage('mind_flay_insanity', 5.4236 / 2)
-          s.gain(4, 'mfi')
-        },
-      },
-      onCastStart: (s) => s.consumeStack('player', 'mfi_charge'),
+      channel: (s) => (s.data.mfi_cast
+        ? {
+            duration: 1.5,
+            ticks: 2,
+            hasted: true,
+            onTick: (sim) => {
+              sim.damage('Mind Flay: Insanity', 5.4236 / 2)
+              sim.gain(4, 'mfi')
+            },
+          }
+        : {
+            duration: 4.5,
+            ticks: 6,
+            hasted: true,
+            onTick: (sim) => {
+              sim.damage('mind_flay', 7.2072 / 6)
+              sim.gain(3, 'mind_flay')
+            },
+          }),
       onResolve: () => {},
     },
     {
@@ -276,18 +288,6 @@ export const shadowPriest: SpecConfig = {
       },
     },
     {
-      id: 'void_volley',
-      name: 'Void Volley',
-      icon: 'inv12_ability_priest_voidvolley',
-      spellId: 1242173,
-      usable: (s) => (s.stacks('player', 'void_volley_charge') > 0 ? true : 'needs a Void Volley charge (Voidform / Tentacle Slam)'),
-      onResolve: (s) => {
-        s.consumeStack('player', 'void_volley_charge')
-        s.gain(10, 'void_volley')
-        s.damage('void_volley', VOID_VOLLEY_COEFF)
-      },
-    },
-    {
       id: 'halo',
       name: 'Halo',
       icon: 'ability_priest_halo_shadow',
@@ -306,16 +306,29 @@ export const shadowPriest: SpecConfig = {
       },
     },
     {
+      // One button, as in game: while you hold Void Volley charges (from
+      // Voidform or the S2 4pc), this button IS Void Volley.
       id: 'voidform',
       name: 'Voidform',
       icon: 'spell_priest_void-blast',
       spellId: 228260,
       castTime: 1.5,
       cooldown: 120,
+      displayName: (s) => (volleyReady(s) ? 'Void Volley' : 'Voidform'),
+      displayIcon: (s) => (volleyReady(s) ? 'inv12_ability_priest_voidvolley' : 'spell_priest_void-blast'),
+      displayStacks: (s) => s.stacks('player', 'void_volley_charge'),
+      noCooldownIf: (s) => volleyReady(s),
+      castTimeMod: (s, base) => (volleyReady(s) ? 0 : base),
       onResolve: (s) => {
-        s.applyAura('player', 'voidform')
-        grantVoidVolley(s, 3)
-        s.damage('void_volley', VOID_VOLLEY_COEFF) // fires a Void Volley on cast
+        if (volleyReady(s)) {
+          s.consumeStack('player', 'void_volley_charge')
+          s.gain(10, 'void_volley')
+          s.damage('Void Volley', VOID_VOLLEY_COEFF)
+        } else {
+          s.applyAura('player', 'voidform')
+          grantVoidVolley(s, 3)
+          s.damage('Void Volley', VOID_VOLLEY_COEFF) // fires a Void Volley on cast
+        }
       },
     },
     {
@@ -331,8 +344,8 @@ export const shadowPriest: SpecConfig = {
 
   actionBar: [
     'shadow_word_pain', 'vampiric_touch', 'mind_blast', 'shadow_word_madness',
-    'mind_flay', 'mind_flay_insanity', 'tentacle_slam', 'void_volley',
-    'halo', 'voidform', 'power_infusion', 'shadow_word_death',
+    'mind_flay', 'tentacle_slam', 'halo', 'voidform',
+    'power_infusion', 'shadow_word_death',
   ],
 
   damageMult: (s) => (s.auraRemains('player', 'voidform') > 0 ? VOIDFORM_DMG : 1),
@@ -342,11 +355,27 @@ export const shadowPriest: SpecConfig = {
     switch (id) {
       case 'mind_blast': return s.stacks('player', 'shadowy_insight') > 0
       case 'shadow_word_madness': return s.stacks('player', 'mind_devourer') > 0
-      case 'mind_flay_insanity': return s.stacks('player', 'mfi_charge') > 0
-      case 'void_volley': return s.stacks('player', 'void_volley_charge') > 0
+      case 'mind_flay': return s.stacks('player', 'mfi_charge') > 0
+      case 'voidform': return s.stacks('player', 'void_volley_charge') > 0
       default: return false
     }
   },
+
+  // shown in the UI; rows mirror `policy` below, in the same order
+  priorityList: [
+    { abilityId: 'halo', text: 'On cooldown, once both DoTs are up', when: s => s.cooldownRemains('halo') === 0 },
+    { abilityId: 'voidform', text: 'On cooldown (dump blocking Volley charges first)', when: s => s.cooldownRemains('voidform') === 0 },
+    { abilityId: 'power_infusion', text: 'During Voidform', when: s => s.auraRemains('player', 'voidform') > 0 && s.cooldownRemains('power_infusion') === 0 },
+    { abilityId: 'shadow_word_madness', text: 'Expiring, Mind Devourer proc, ≥65 Insanity (no Voidform soon), or in Voidform' },
+    { abilityId: 'voidform', label: 'Void Volley', icon: 'inv12_ability_priest_voidvolley', text: 'Spend charges inside Voidform', when: s => s.auraRemains('player', 'voidform') > 0 && s.stacks('player', 'void_volley_charge') > 0 },
+    { abilityId: 'tentacle_slam', text: 'VT needs refreshing, or 2 charges about to cap' },
+    { abilityId: 'shadow_word_pain', text: 'Refresh in the pandemic window (<4.8s left)' },
+    { abilityId: 'mind_blast', text: 'Keep charges rolling (Shadowy Insight = free instant)' },
+    { abilityId: 'mind_flay', text: 'Mind Flay: Insanity proc, while SW:M is ticking', when: s => s.stacks('player', 'mfi_charge') > 0 },
+    { abilityId: 'vampiric_touch', text: 'Hard-cast only if Tentacle Slam can’t cover it' },
+    { abilityId: 'voidform', label: 'Void Volley', icon: 'inv12_ability_priest_voidvolley', text: 'Leftover 4pc charges before filler', when: s => s.stacks('player', 'void_volley_charge') > 0 },
+    { abilityId: 'mind_flay', text: 'Filler — always be casting' },
+  ],
 
   /**
    * Oracle — hand-translated from simc midnight `actions.main` + `actions.cds`
@@ -362,10 +391,13 @@ export const shadowPriest: SpecConfig = {
     const swmRemains = s.auraRemains('target', 'swm_dot')
     const canSpend = s.insanity >= 50 || s.stacks('player', 'mind_devourer') > 0
 
-    // cds: halo → voidform → power_infusion, once dots are rolling
+    // cds: halo → voidform → power_infusion, once dots are rolling.
+    // (with volley charges up, pressing 'voidform' fires Void Volley — dumping
+    // the charges is what unlocks the actual Voidform cast, so the same
+    // button-priority covers both, exactly like in game)
     if (dotsUp) {
       if (s.isUsable('halo') === true && s.timeToUsable('halo') === 0) return 'halo'
-      if (s.isUsable('voidform') === true && s.timeToUsable('voidform') === 0) return 'voidform'
+      if (s.cooldownRemains('voidform') === 0 && s.isUsable('voidform') === true) return 'voidform'
       if (vfUp && s.isUsable('power_infusion') === true) return 'power_infusion'
     }
 
@@ -377,8 +409,8 @@ export const shadowPriest: SpecConfig = {
       || (vfUp && s.insanity >= 50)
     )) return 'shadow_word_madness'
 
-    // void_volley while voidform is up (burst window)
-    if (vfUp && s.isUsable('void_volley') === true) return 'void_volley'
+    // Void Volley (the transformed Voidform button) while the burst window is up
+    if (vfUp && volleyReady(s)) return 'voidform'
 
     // tentacle_slam: VT refreshable or about to cap charges
     const vtRefreshable = s.auraRemains('target', 'vt_dot') < 21 * 0.3
@@ -395,14 +427,14 @@ export const shadowPriest: SpecConfig = {
     if (s.isUsable('mind_blast') === true && s.timeToUsable('mind_blast') === 0
       && s.stacks('player', 'mind_devourer') === 0) return 'mind_blast'
 
-    // mind_flay_insanity (Archon proc) while SW:M is ticking
-    if (s.stacks('player', 'mfi_charge') > 0 && swmRemains > 0) return 'mind_flay_insanity'
+    // Mind Flay: Insanity (the transformed Mind Flay button) while SW:M is ticking
+    if (s.stacks('player', 'mfi_charge') > 0 && swmRemains > 0) return 'mind_flay'
 
     // vampiric_touch hard-cast if Tentacle Slam can't cover the refresh
     if (vtRefreshable && s.isUsable('tentacle_slam') !== true) return 'vampiric_touch'
 
-    // leftover void_volley charges (4pc) before filler
-    if (s.isUsable('void_volley') === true) return 'void_volley'
+    // leftover Void Volley charges (4pc) before filler
+    if (volleyReady(s)) return 'voidform'
 
     // filler
     return 'mind_flay'
@@ -410,7 +442,7 @@ export const shadowPriest: SpecConfig = {
 
   equivalentChoices: (_s, pressed, oracle) => {
     const fillers = ['mind_flay', 'shadow_word_death']
-    const nukes = ['mind_blast', 'void_volley', 'mind_flay_insanity']
+    const nukes = ['mind_blast', 'voidform'] // 'voidform' is usually a Volley press here
     const vtAppliers = ['tentacle_slam', 'vampiric_touch']
     const sets = [fillers, nukes, vtAppliers]
     return sets.some(set => set.includes(pressed) && set.includes(oracle))

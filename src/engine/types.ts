@@ -54,15 +54,24 @@ export interface AbilityDef {
   name: string
   icon: string
   spellId?: number
+  /** current display name/icon when a proc transforms the button (MF: Insanity style) */
+  displayName?: (sim: SimAPI) => string
+  displayIcon?: (sim: SimAPI) => string
+  /** extra stack badge on the button (proc charges), shown when > 0 */
+  displayStacks?: (sim: SimAPI) => number
   /** base cast time in seconds; omit for instant */
   castTime?: number
-  channel?: ChannelDef
+  /** static, or resolved at cast start for proc-transformed channels */
+  channel?: ChannelDef | ((sim: SimAPI) => ChannelDef)
   cooldown?: number
   charges?: number
   offGcd?: boolean
   /** resource cost (dynamic via costMod) */
   cost?: number
   costMod?: (sim: SimAPI) => number
+  /** runes spent (specs with a rune pool) */
+  runeCost?: number
+  runeCostMod?: (sim: SimAPI) => number
   castTimeMod?: (sim: SimAPI, base: number) => number
   /** return true if usable, or a string reason why not */
   usable?: (sim: SimAPI) => true | string
@@ -117,6 +126,13 @@ export interface SimAPI {
   gain(amount: number, source: string): void
   spend(amount: number): void
 
+  /** rune pool (0 everywhere when the spec has no runes) */
+  runesReady(): number
+  /** seconds until the next rune comes back (0 if one is ready) */
+  nextRuneIn(): number
+  /** instantly restore the rune closest to coming back (Runic Empowerment-style) */
+  refundRune(): void
+
   damage(spellId: string, coeff: number, opts?: { canCrit?: boolean; tags?: string[] }): void
 
   ability(id: string): AbilityDef
@@ -135,9 +151,13 @@ export interface SimAPI {
 export interface SpecConfig {
   name: string
   specId: string
+  /** icon for the spec badge / picker */
+  specIcon?: string
   resourceName: string
   resourceMax: number
   startingResource?: number
+  /** secondary recharging pool (DK runes); rechargeTime is hasted */
+  runes?: { max: number; rechargeTime: number }
   abilities: AbilityDef[]
   auras: AuraDef[]
   /** default action-bar order */
@@ -149,6 +169,8 @@ export interface SpecConfig {
   hasteMod?: (sim: SimAPI) => number
   /** the oracle: best ability to press right now, or null to wait */
   policy: (sim: SimAPI) => string | null
+  /** human-readable priority list mirroring `policy`, for display */
+  priorityList?: PriorityRow[]
   /** should this action-bar button glow (proc highlight)? */
   glows?: (sim: SimAPI, abilityId: string) => boolean
   /** abilities considered near-equivalent picks for grading, e.g. filler vs filler */
@@ -159,4 +181,16 @@ export interface SimConfig {
   seed: number
   duration: number
   stats: Stats
+  /** Bloodlust/Heroism from combat start: +30% haste for 40s */
+  lustOnPull?: boolean
+}
+
+export interface PriorityRow {
+  abilityId: string
+  text: string
+  /** display overrides for transformed-button rows (e.g. Void Volley on the Voidform button) */
+  label?: string
+  icon?: string
+  /** condition for live-hint highlighting (matched against the oracle's pick) */
+  when?: (sim: SimAPI) => boolean
 }

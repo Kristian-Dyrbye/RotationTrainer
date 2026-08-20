@@ -13,6 +13,8 @@ interface ScheduledEvent {
 const QUEUE_WINDOW = 0.4
 const GCD_BASE = 1.5
 const GCD_FLOOR = 0.75
+export const LUST_HASTE = 0.3
+export const LUST_DURATION = 40
 
 interface CooldownState {
   charges: number
@@ -36,11 +38,16 @@ export class Sim implements SimAPI {
   damageLog: DamageEvent[] = []
   castLog: CastEvent[] = []
   combatStarted = false
+  private combatStartAt: number | null = null
 
   private rngBank: RngBank
   private events: ScheduledEvent[] = []
   private seq = 0
   private auras: ActiveAura[] = []
+  /** per-rune time it becomes ready (specs with a rune pool) */
+  private runeReadyAt: number[] = []
+  private uptimeAcc = new Map<string, number>()
+  private uptimeSince = new Map<string, number>()
   private cooldowns = new Map<string, CooldownState>()
   private abilityMap = new Map<string, AbilityDef>()
   private auraDefMap = new Map<string, import('./types').AuraDef>()
@@ -67,6 +74,54 @@ export class Sim implements SimAPI {
       })
     }
     for (const au of spec.auras) this.auraDefMap.set(au.id, au)
+    if (spec.runes) this.runeReadyAt = new Array(spec.runes.max).fill(0)
+  }
+
+  // ---- runes ----
+
+  runesReady(): number {
+    return this.runeReadyAt.filter(t => t <= this.time + 1e-9).length
+  }
+
+  nextRuneIn(): number {
+    const waiting = this.runeReadyAt.filter(t => t > this.time + 1e-9)
+    if (!waiting.length) return 0
+    return Math.min(...waiting) - this.time
+  }
+
+  private spendRunes(n: number) {
+    const recharge = (this.spec.runes?.rechargeTime ?? 10) * this.hasteMult()
+    for (let i = 0; i < n; i++) {
+      let idx = -1
+      for (let j = 0; j < this.runeReadyAt.length; j++) {
+        if (this.runeReadyAt[j] <= this.time + 1e-9 && (idx < 0 || this.runeReadyAt[j] < this.runeReadyAt[idx])) idx = j
+      }
+      if (idx < 0) return
+      // only 3 runes recharge at once (simc MAX_REGENERATING_RUNES); a 4th+
+      // spent rune starts its recharge when a slot frees up
+      const outstanding = this.runeReadyAt.filter(t => t > this.time + 1e-9).sort((a, b) => a - b)
+      const start = outstanding.length < 3 ? this.time : outstanding[outstanding.length - 3]
+      this.runeReadyAt[idx] = start + recharge
+    }
+  }
+
+  refundRune() {
+    let idx = -1
+    for (let j = 0; j < this.runeReadyAt.length; j++) {
+      if (this.runeReadyAt[j] > this.time + 1e-9 && (idx < 0 || this.runeReadyAt[j] < this.runeReadyAt[idx])) idx = j
+    }
+    if (idx >= 0) this.runeReadyAt[idx] = this.time
+  }
+
+  /** UI: readiness fraction per rune (1 = ready) */
+  runeInfo(): { ready: boolean; frac: number }[] {
+    const recharge = (this.spec.runes?.rechargeTime ?? 10) * this.hasteMult()
+    return this.runeReadyAt
+      .map(t => {
+        const remain = Math.max(0, t - this.time)
+        return { ready: remain <= 1e-9, frac: Math.max(0, Math.min(1, 1 - remain / recharge)) }
+      })
+      .sort((a, b) => b.frac - a.frac)
   }
 
   // ---- time & events ----
@@ -107,8 +162,15 @@ export class Sim implements SimAPI {
   beginCombat() {
     if (this.combatStarted) return
     this.combatStarted = true
+    this.combatStartAt = this.time
     this.lastReadyAt = this.time
     this.spec.onCombatStart?.(this)
+  }
+
+  /** seconds of Bloodlust left (0 when not lusting) */
+  lustRemaining(): number {
+    if (!this.config.lustOnPull || this.combatStartAt === null) return 0
+    return Math.max(0, LUST_DURATION - (this.time - this.combatStartAt))
   }
 
   // ---- rng / stats ----
@@ -119,7 +181,8 @@ export class Sim implements SimAPI {
 
   hasteMult(): number {
     const bonus = this.spec.hasteMod?.(this) ?? 0
-    return 1 / (1 + this.stats.haste + bonus)
+    const lust = this.lustRemaining() > 0 ? LUST_HASTE : 0
+    return 1 / (1 + this.stats.haste + bonus + lust)
   }
 
   gcdLength(): number {
@@ -178,6 +241,7 @@ export class Sim implements SimAPI {
       data: {},
     }
     this.auras.push(aura)
+    if (unit === 'target' && !this.uptimeSince.has(id)) this.uptimeSince.set(id, this.time)
     if (def.tick) {
       const interval = def.tick.hasted ? def.tick.interval * this.hasteMult() : def.tick.interval
       aura.tickInterval = interval
@@ -212,16 +276,32 @@ export class Sim implements SimAPI {
         this.scheduleAuraExpiry(aura)
         return
       }
-      this.auras = this.auras.filter(a => a !== aura)
-      this.auraDef(aura.defId).onExpire?.(this, aura)
+      this.dropAura(aura)
     })
+  }
+
+  private dropAura(aura: ActiveAura) {
+    this.auras = this.auras.filter(a => a !== aura)
+    if (aura.unit === 'target') {
+      const since = this.uptimeSince.get(aura.defId)
+      if (since !== undefined) {
+        this.uptimeAcc.set(aura.defId, (this.uptimeAcc.get(aura.defId) ?? 0) + this.time - since)
+        this.uptimeSince.delete(aura.defId)
+      }
+    }
+    this.auraDef(aura.defId).onExpire?.(this, aura)
   }
 
   removeAura(unit: Unit, id: string) {
     const a = this.aura(unit, id)
-    if (!a) return
-    this.auras = this.auras.filter(x => x !== a)
-    this.auraDef(id).onExpire?.(this, a)
+    if (a) this.dropAura(a)
+  }
+
+  /** total seconds this debuff has been active on the target so far */
+  debuffUptime(id: string): number {
+    const acc = this.uptimeAcc.get(id) ?? 0
+    const since = this.uptimeSince.get(id)
+    return acc + (since !== undefined ? this.time - since : 0)
   }
 
   extendAura(unit: Unit, id: string, seconds: number) {
@@ -233,10 +313,7 @@ export class Sim implements SimAPI {
     const a = this.aura(unit, id)
     if (!a) return
     a.stacks -= 1
-    if (a.stacks <= 0) {
-      this.auras = this.auras.filter(x => x !== a)
-      this.auraDef(id).onExpire?.(this, a)
-    }
+    if (a.stacks <= 0) this.dropAura(a)
   }
 
   allAuras(unit: Unit): ActiveAura[] {
@@ -355,8 +432,12 @@ export class Sim implements SimAPI {
 
   isUsable(id: string): true | string {
     const def = this.ability(id)
-    if (this.cd(id).charges <= 0) return 'on cooldown'
+    // a proc-transformed press doesn't touch the base ability's cooldown
+    const bypassCd = def.noCooldownIf?.(this) ?? false
+    if (!bypassCd && this.cd(id).charges <= 0) return 'on cooldown'
     if (this.effectiveCost(def) > this.insanity) return `not enough ${this.spec.resourceName}`
+    const runeCost = def.runeCostMod ? def.runeCostMod(this) : def.runeCost ?? 0
+    if (runeCost > 0 && this.runesReady() < runeCost) return 'not enough runes'
     if (def.usable) {
       const r = def.usable(this)
       if (r !== true) return r
@@ -367,11 +448,18 @@ export class Sim implements SimAPI {
   /** seconds until this ability could be pressed (GCD + cooldown + cast), ignoring resources */
   timeToUsable(id: string): number {
     const def = this.ability(id)
-    const cdWait = this.cooldownRemains(id)
+    const cdWait = def.noCooldownIf?.(this) ? 0 : this.cooldownRemains(id)
     const gcdWait = def.offGcd ? 0 : Math.max(0, this.gcdReadyAt - this.time)
     // channels don't block — they're clipped by the next press
     const castWait = this.casting && !this.casting.channel ? Math.max(0, this.casting.finishAt - this.time) : 0
-    return Math.max(cdWait, gcdWait, castWait)
+    let runeWait = 0
+    const runeCost = def.runeCostMod ? def.runeCostMod(this) : def.runeCost ?? 0
+    if (runeCost > 0 && this.runesReady() < runeCost) {
+      const waiting = this.runeReadyAt.filter(t => t > this.time + 1e-9).sort((a, b) => a - b)
+      const needed = runeCost - this.runesReady()
+      runeWait = waiting.length >= needed ? waiting[needed - 1] - this.time : Infinity
+    }
+    return Math.max(cdWait, gcdWait, castWait, runeWait)
   }
 
   /**
@@ -453,13 +541,15 @@ export class Sim implements SimAPI {
   private resolveCast(def: AbilityDef) {
     const cost = this.effectiveCost(def)
     if (cost > 0) this.spend(cost)
+    const runeCost = def.runeCostMod ? def.runeCostMod(this) : def.runeCost ?? 0
+    if (runeCost > 0) this.spendRunes(runeCost)
     def.onResolve(this)
     const last = this.castLog[this.castLog.length - 1]
     if (last && last.abilityId === def.id) last.insanityAfter = this.insanity
   }
 
   private startChannel(def: AbilityDef) {
-    const ch = def.channel!
+    const ch = typeof def.channel === 'function' ? def.channel(this) : def.channel!
     const mult = ch.hasted === false ? 1 : this.hasteMult()
     const duration = ch.duration * mult
     const tickInterval = duration / ch.ticks

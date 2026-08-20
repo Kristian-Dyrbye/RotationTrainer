@@ -1,1 +1,0 @@
-{"root":["./src/app.tsx","./src/main.tsx","./src/engine/rng.ts","./src/engine/score.ts","./src/engine/sim.test.ts","./src/engine/sim.ts","./src/engine/types.ts","./src/specs/shadowpriest/spec.test.ts","./src/specs/shadowpriest/spec.ts","./src/ui/reportscreen.tsx","./src/ui/setupscreen.tsx","./src/ui/trainingscreen.tsx","./src/ui/icons.ts"],"version":"5.9.3"}

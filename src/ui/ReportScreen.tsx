@@ -58,6 +58,7 @@ export function ReportScreen({ spec, report, onAgain, onSetup }: {
       </div>
 
       <div className="report-cols">
+        <div className="report-left">
         <section className="panel">
           <h2>Damage by spell</h2>
           <table className="dmg-table">
@@ -79,6 +80,26 @@ export function ReportScreen({ spec, report, onAgain, onSetup }: {
             </tbody>
           </table>
         </section>
+
+        <section className="panel">
+          <h2>DoT uptime</h2>
+          {report.dotUptimes.map(d => (
+            <div key={d.id} className="uptime-row">
+              <span className="dmg-name">{d.icon && <img src={iconUrl(d.icon, 'medium')} alt="" />}{d.name}</span>
+              <div className="uptime-bars">
+                <div className="uptime-bar you" title="you">
+                  <div style={{ width: `${d.uptime * 100}%` }} />
+                  <span className="mono">{Math.round(d.uptime * 100)}%</span>
+                </div>
+                <div className="uptime-bar oracle" title="oracle">
+                  <div style={{ width: `${d.oracleUptime * 100}%` }} />
+                  <span className="mono">{Math.round(d.oracleUptime * 100)}% oracle</span>
+                </div>
+              </div>
+            </div>
+          ))}
+        </section>
+        </div>
 
         <section className="panel timeline-panel">
           <h2>Cast timeline</h2>

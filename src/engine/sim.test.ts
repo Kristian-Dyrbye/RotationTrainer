@@ -164,6 +164,90 @@ describe('haste', () => {
   })
 })
 
+describe('runes', () => {
+  function runeSpec(): SpecConfig {
+    return {
+      name: 'RuneToy',
+      specId: 'runetoy',
+      resourceName: 'Runic Power',
+      resourceMax: 100,
+      runes: { max: 6, rechargeTime: 10 },
+      abilities: [
+        {
+          id: 'strike',
+          name: 'Strike',
+          icon: 'x',
+          runeCost: 2,
+          onResolve: s => { s.gain(20, 'strike'); s.damage('strike', 10) },
+        },
+      ],
+      auras: [],
+      actionBar: ['strike'],
+      policy: () => 'strike',
+    }
+  }
+
+  it('spends runes, recharges them in parallel with haste', () => {
+    const sim = new Sim(runeSpec(), { seed: 1, duration: 60, stats: { haste: 0.25, critChance: 0, critMult: 2 } })
+    sim.gradeCasts = false
+    sim.beginCombat()
+    expect(sim.runesReady()).toBe(6)
+    sim.press('strike'); sim.advance(1.5)
+    sim.press('strike'); sim.advance(3)
+    sim.press('strike')
+    expect(sim.runesReady()).toBe(0)
+    expect(sim.insanity).toBe(60)
+    sim.advance(4.5) // clear the GCD so the rune gate is what blocks
+    expect(sim.press('strike')).toBe('not enough runes')
+    // 10s / 1.25 = 8s recharge; only 3 recharge concurrently, so the queue is:
+    // t=0 pair -> ready 8; t=1.5 pair -> 9.5 and (queued behind t=8) 16;
+    // t=3 pair -> (behind 8) 16 and (behind 9.5) 17.5
+    sim.advance(8.05)
+    expect(sim.runesReady()).toBe(2)
+    sim.advance(11.05)
+    expect(sim.runesReady()).toBe(3)
+    sim.advance(17.55)
+    expect(sim.runesReady()).toBe(6)
+  })
+
+  it('refundRune restores the soonest recharging rune', () => {
+    const sim = new Sim(runeSpec(), { seed: 1, duration: 60, stats: { haste: 0, critChance: 0, critMult: 2 } })
+    sim.gradeCasts = false
+    sim.beginCombat()
+    sim.press('strike')
+    expect(sim.runesReady()).toBe(4)
+    sim.refundRune()
+    expect(sim.runesReady()).toBe(5)
+  })
+})
+
+describe('debuff uptime', () => {
+  it('accumulates active time across the fight', () => {
+    const sim = makeSim()
+    sim.press('dotter') // 12s dot
+    sim.advance(6)
+    expect(sim.debuffUptime('dot')).toBeCloseTo(6, 3)
+    sim.advance(30) // dot expired at 12
+    expect(sim.debuffUptime('dot')).toBeCloseTo(12, 3)
+    sim.press('dotter')
+    sim.advance(33)
+    expect(sim.debuffUptime('dot')).toBeCloseTo(15, 3)
+  })
+})
+
+describe('bloodlust', () => {
+  it('adds 30% haste for 40s from the pull', () => {
+    const sim = new Sim(toySpec(), { seed: 1, duration: 60, stats: { haste: 0.1, critChance: 0, critMult: 2 }, lustOnPull: true })
+    expect(sim.gcdLength()).toBeCloseTo(1.5 / 1.1, 4) // not pulled yet
+    sim.beginCombat()
+    expect(sim.lustRemaining()).toBe(40)
+    expect(sim.gcdLength()).toBeCloseTo(1.5 / 1.4, 4)
+    sim.advance(41)
+    expect(sim.lustRemaining()).toBe(0)
+    expect(sim.gcdLength()).toBeCloseTo(1.5 / 1.1, 4)
+  })
+})
+
 describe('determinism & oracle', () => {
   it('same seed gives identical oracle runs', () => {
     const spec = toySpec()
