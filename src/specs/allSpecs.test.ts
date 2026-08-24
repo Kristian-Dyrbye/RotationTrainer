@@ -56,6 +56,12 @@ for (const spec of specs) {
       expect(report.decisionAccuracy).toBeGreaterThan(0.95)
     })
 
+    it('scales with haste and crit (stats feed procs, resources, damage)', () => {
+      const low = runOracle(spec, { ...CFG, stats: { haste: 0, critChance: 0.05, critMult: 2.0 } })
+      const high = runOracle(spec, { ...CFG, stats: { haste: 0.3, critChance: 0.35, critMult: 2.0 } })
+      expect(high.totalDamage).toBeGreaterThan(low.totalDamage * 1.1)
+    })
+
     it('has a priority list and matching action bar entries', () => {
       expect(spec.priorityList?.length ?? 0).toBeGreaterThan(4)
       for (const row of spec.priorityList ?? []) {
