@@ -2,16 +2,19 @@ import { useEffect, useState } from 'react'
 import type { SpecConfig } from '../engine/types'
 import type { ScoreReport } from '../engine/score'
 import type { TrainingConfig } from '../App'
+import { buildIdOf } from '../specs'
 import { iconUrl } from './icons'
 import { comboFromEvent, useKeyLabels } from './keys'
 import { PriorityPanel } from './PriorityPanel'
 
-export function SetupScreen({ spec, config, onStart, lastReport, onChangeSpec }: {
+export function SetupScreen({ spec, config, onStart, lastReport, onChangeSpec, variants, onChangeBuild }: {
   spec: SpecConfig
   config: TrainingConfig
   onStart: (cfg: TrainingConfig) => void
   lastReport: ScoreReport | null
   onChangeSpec: () => void
+  variants: SpecConfig[]
+  onChangeBuild: (buildId: string) => void
 }) {
   const [duration, setDuration] = useState(config.duration)
   const [keybinds, setKeybinds] = useState(config.keybinds)
@@ -122,6 +125,21 @@ export function SetupScreen({ spec, config, onStart, lastReport, onChangeSpec }:
         {spec.source && (
           <section className="panel">
             <h2>Build — from Wowhead</h2>
+            {variants.length > 1 && (
+              <div className="row" style={{ marginBottom: '0.6rem' }}>
+                {variants.map(v => (
+                  <button
+                    key={buildIdOf(v)}
+                    className={`chip ${v === spec ? 'active' : ''}`}
+                    onClick={() => v !== spec && onChangeBuild(buildIdOf(v))}
+                    title={v.source?.buildName}
+                  >
+                    {v.source?.heroTalent ?? buildIdOf(v)}
+                  </button>
+                ))}
+                <span className="hint">Switching swaps the action bar, rotation and scoring oracle.</span>
+              </div>
+            )}
             <p>
               <strong>{spec.source.buildName}</strong> · {spec.source.heroTalent} hero talents
               {' · '}

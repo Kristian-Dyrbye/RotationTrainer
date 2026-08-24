@@ -165,6 +165,12 @@ export interface SpecConfig {
   specId: string
   /** icon for the spec badge / picker */
   specIcon?: string
+  /**
+   * distinguishes builds of the same spec (e.g. 'stormbringer' vs 'totemic');
+   * defaults to a slug of source.heroTalent — set explicitly only when two
+   * builds share a hero talent
+   */
+  buildId?: string
   /** where this spec's build + rotation come from (shown in Setup) */
   source?: GuideSource
   resourceName: string
