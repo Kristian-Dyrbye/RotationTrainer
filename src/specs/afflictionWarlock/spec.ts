@@ -2,32 +2,41 @@ import type { SimAPI, SpecConfig } from '../../engine/types'
 
 /**
  * Affliction Warlock — patch 12.1.0 (Midnight, Season 2), Soul Harvester
- * raid ST build (Icy Veins default). Built from the simc `midnight`
- * APL/source and Icy Veins/Wowhead 12.1 guides.
+ * raid single-target build. Verified against live guides 2026-08-24:
+ *  - Wowhead rotation guide: https://www.wowhead.com/guide/classes/warlock/affliction/rotation-cooldowns-pve-dps
+ *  - Icy Veins: https://www.icy-veins.com/wow/affliction-warlock-pve-dps-rotation-cooldowns-abilities
+ *  - Method: https://www.method.gg/guides/affliction-warlock/playstyle-and-rotation
+ *  - Maxroll raid guide: https://maxroll.gg/wow/class-guides/affliction-warlock-raid-guide
+ *  - Kalamazi (talent string): https://www.kalamazi.gg/guides/affliction
  *
- * Resource model: Soul Shards (max 5). Agony ramps to 10 stacks and is the
- * shard engine (gen chance scales with stacks, simc-style accumulator
- * APPROX). Soul Harvester: Drain Soul ticks tear off Succulent Souls that
- * empower Malefic Rapture. Talent assumptions: Unstable Affliction,
- * Malefic Rapture core, Summon Darkglare + Soul Rot,
- * Apex: Creeping Harvest 3/3 (each Malefic Rapture creeps all three DoTs
- * forward 1s). S2 tier: 2pc Unstable Affliction +25% (folded into the
- * coefficient); 4pc Soul Rot rips out 2 Succulent Souls.
- * APPROX-flagged: shard-gen rates, Succulent Soul proc rate, Darkglare
- * beam cadence. Damage in SP units.
+ * 12.1 redesign: Malefic Rapture is gone from single target — Unstable
+ * Affliction is the Soul Shard spender (and a DoT). Keep Agony + Corruption
+ * rolling, Haunt on cooldown, recast UA to hold the Cascading Calamity
+ * haste buff, Dark Harvest on cooldown at ≤2 shards (it generates shards
+ * for Soul Harvester), Summon Darkglare at ≥3 shards (now a 20% DoT damage
+ * window), Drain Soul with Nightfall procs, UA to avoid capping, Drain
+ * Soul filler. S2 tier: 2pc Corruption +25% / Agony +15% (folded into tick
+ * coefficients); 4pc each active UA grants +2% damage (modeled, ST = one
+ * UA). APPROX: all coefficients, Agony shard-trickle accumulator, Nightfall
+ * and Shard Instability proc rates, Darkglare beam cadence, Soul Harvester
+ * shard-spend CDR on Dark Harvest (1s per shard).
  */
 
-const AGONY_TICK_PER_STACK = 0.055 // ramps 1..10 stacks
+const AGONY_TICK_PER_STACK = 0.063 // incl. S2 2pc +15%; ramps 1..10 stacks
 const AGONY_MAX_STACKS = 10
-const CORR_TICK = 0.34
-const UA_TICK = 0.46               // incl. S2 2pc +25%
-const MR_PER_DOT = 0.62
-const SUCCULENT_MULT = 1.6         // Soul Harvester: empowered Rapture
+const CORR_TICK = 0.42             // incl. S2 2pc +25%
+const UA_TICK = 0.46
+const UA_IMPACT = 0.25
+const HAUNT_HIT = 0.7
+const HAUNT_AMP = 1.07             // APPROX: Haunt target damage amp
 const DS_TICK = 0.30
-const SOUL_ROT_HIT = 1.2
-const SOUL_ROT_PULSE = 0.55        // 4 pulses over 8s (scheduled, not a DoT)
-const GLARE_PULSE = 0.38           // per active DoT, 10 beams over 20s
-const SUCCULENT_CHANCE = 0.25      // APPROX: per Drain Soul tick
+const NIGHTFALL_DS_MULT = 1.5      // Nightfall: faster, harder Drain Soul
+const DARK_HARVEST_PER_DOT = 0.9
+const DARKGLARE_DOT_MULT = 1.2     // Darkglare: DoTs +20% while active
+const GLARE_BEAM = 0.25            // APPROX: small beam every 2s, 10 beams
+const TIER4PC_PER_UA = 1.02        // S2 4pc: +2% damage per active UA
+const NIGHTFALL_CHANCE = 0.15      // APPROX: per Corruption tick
+const INSTABILITY_CHANCE = 0.08    // APPROX: per Agony tick
 
 const DOT_IDS = ['agony', 'corruption', 'unstable_affliction'] as const
 
@@ -37,6 +46,17 @@ function dotCount(s: SimAPI): number {
   return n
 }
 
+/** free Unstable Affliction from a Shard Instability proc? */
+function freeUA(s: SimAPI): boolean {
+  return s.auraRemains('player', 'shard_instability') > 0
+}
+
+/** is the Drain Soul button currently in its Nightfall form? */
+function nightfallActive(s: SimAPI): boolean {
+  if (s.casting?.abilityId === 'drain_soul') return s.data.nf_cast === 1
+  return s.stacks('player', 'nightfall') > 0
+}
+
 export const afflictionWarlock: SpecConfig = {
   name: 'Affliction Warlock',
   specId: 'warlock-affliction',
@@ -44,6 +64,15 @@ export const afflictionWarlock: SpecConfig = {
   resourceName: 'Soul Shards',
   resourceMax: 5,
   startingResource: 3,
+
+  source: {
+    guideUrl: 'https://www.wowhead.com/guide/classes/warlock/affliction/rotation-cooldowns-pve-dps',
+    buildName: 'Soul Harvester Raid Single Target',
+    heroTalent: 'Soul Harvester',
+    // published verbatim by kalamazi.gg ("Soul Harvester Affliction Single Target")
+    talentString: 'EAORKURFVUVFUVGIUBANVVVSVVFBUZFQ0BQFFVVVUBQ',
+    retrieved: '2026-08-24',
+  },
 
   auras: [
     {
@@ -56,20 +85,37 @@ export const afflictionWarlock: SpecConfig = {
           aura.stacks = Math.min(AGONY_MAX_STACKS, aura.stacks + 1)
           // shard trickle scales with the ramp (APPROX accumulator)
           if (s.rng('agony_shard') < 0.04 + 0.016 * aura.stacks) s.gain(1, 'agony')
+          // Shard Instability: free Unstable Affliction proc (APPROX source)
+          if (s.rng('shard_instability') < INSTABILITY_CHANCE) s.applyAura('player', 'shard_instability')
         },
       },
     },
     {
       id: 'corruption', name: 'Corruption', icon: 'spell_shadow_abominationexplosion',
       duration: 14, pandemic: true, debuff: true,
-      tick: { interval: 2, hasted: true, onTick: s => s.damage('corruption', CORR_TICK) },
+      tick: {
+        interval: 2, hasted: true,
+        onTick: (s) => {
+          s.damage('corruption', CORR_TICK)
+          if (s.rng('nightfall') < NIGHTFALL_CHANCE) s.applyAura('player', 'nightfall', { stacks: 1 })
+        },
+      },
     },
     {
       id: 'unstable_affliction', name: 'Unstable Affliction', icon: 'spell_shadow_unstableaffliction_3',
       duration: 21, pandemic: true, debuff: true,
       tick: { interval: 2, hasted: true, onTick: s => s.damage('unstable_affliction', UA_TICK) },
     },
-    { id: 'succulent_soul', name: 'Succulent Soul', icon: 'inv_soulbarrier', duration: 20, maxStacks: 2 },
+    {
+      id: 'haunt', name: 'Haunt', icon: 'ability_warlock_haunt',
+      duration: 18, pandemic: true, debuff: true,
+    },
+    {
+      id: 'cascading_calamity', name: 'Cascading Calamity', icon: 'ability_warlock_eradication',
+      duration: 15, // recast UA before it drops to keep the haste rolling
+    },
+    { id: 'nightfall', name: 'Nightfall', icon: 'spell_shadow_twilight', duration: 20, maxStacks: 2 },
+    { id: 'shard_instability', name: 'Shard Instability', icon: 'spell_warlock_soulburn', duration: 15 },
     { id: 'darkglare', name: 'Summon Darkglare', icon: 'inv_beholderwarlock', duration: 20 },
   ],
 
@@ -95,65 +141,77 @@ export const afflictionWarlock: SpecConfig = {
       },
     },
     {
+      id: 'haunt',
+      name: 'Haunt',
+      icon: 'ability_warlock_haunt',
+      spellId: 48181,
+      castTime: 1.5,
+      cooldown: 15,
+      onResolve: (s) => {
+        s.damage('haunt', HAUNT_HIT)
+        s.applyAura('target', 'haunt')
+      },
+    },
+    {
       id: 'unstable_affliction',
       name: 'Unstable Affliction',
       icon: 'spell_shadow_unstableaffliction_3',
       spellId: 316099,
       castTime: 1.5,
+      cost: 1,
+      costMod: (s) => (freeUA(s) ? 0 : 1),
       onResolve: (s) => {
-        s.damage('unstable_affliction', 0.25)
+        // Cascading Calamity: recasting UA while it ticks keeps the buff up
+        if (s.auraRemains('target', 'unstable_affliction') > 0) s.applyAura('player', 'cascading_calamity')
+        if (freeUA(s)) {
+          s.removeAura('player', 'shard_instability')
+        } else {
+          // Soul Harvester: shards spent shave Dark Harvest's cooldown (APPROX 1s/shard)
+          s.reduceCooldown('dark_harvest', 1)
+        }
+        s.damage('unstable_affliction', UA_IMPACT)
         s.applyAura('target', 'unstable_affliction')
       },
     },
     {
-      id: 'malefic_rapture',
-      name: 'Malefic Rapture',
-      icon: 'ability_warlock_everlastingaffliction',
-      spellId: 324536,
-      castTime: 1.5,
-      cost: 1,
-      onResolve: (s) => {
-        let mult = 1
-        if (s.stacks('player', 'succulent_soul') > 0) {
-          s.consumeStack('player', 'succulent_soul')
-          mult = SUCCULENT_MULT
-        }
-        s.damage('malefic_rapture', MR_PER_DOT * dotCount(s) * mult)
-        // Apex: Creeping Harvest — each Rapture creeps all DoTs 1s forward
-        for (const id of DOT_IDS) {
-          if (s.auraRemains('target', id) > 0) s.extendAura('target', id, 1)
-        }
-      },
-    },
-    {
+      // One button, as in game: a Nightfall proc transforms the channel.
       id: 'drain_soul',
       name: 'Drain Soul',
       icon: 'spell_shadow_haunting',
       spellId: 198590,
-      channel: {
-        duration: 4.5,
-        ticks: 5,
-        hasted: true,
-        onTick: (s) => {
-          s.damage('drain_soul', DS_TICK)
-          if (s.rng('succulent_soul') < SUCCULENT_CHANCE) s.applyAura('player', 'succulent_soul', { stacks: 1 })
-        },
+      displayName: (s) => (nightfallActive(s) ? 'Drain Soul: Nightfall' : 'Drain Soul'),
+      displayIcon: (s) => (nightfallActive(s) ? 'spell_shadow_twilight' : 'spell_shadow_haunting'),
+      displayStacks: (s) => s.stacks('player', 'nightfall'),
+      onCastStart: (s) => {
+        s.data.nf_cast = s.stacks('player', 'nightfall') > 0 ? 1 : 0
+        if (s.data.nf_cast) s.consumeStack('player', 'nightfall')
       },
+      channel: (s) => (s.data.nf_cast
+        ? {
+            duration: 2.25, // Nightfall: channels 50% faster and hits harder
+            ticks: 5,
+            hasted: true,
+            onTick: (sim) => sim.damage('drain_soul', DS_TICK * NIGHTFALL_DS_MULT),
+          }
+        : {
+            duration: 4.5,
+            ticks: 5,
+            hasted: true,
+            onTick: (sim) => sim.damage('drain_soul', DS_TICK),
+          }),
       onResolve: () => {},
     },
     {
-      id: 'soul_rot',
-      name: 'Soul Rot',
-      icon: 'ability_ardenweald_warlock',
-      spellId: 386997,
+      id: 'dark_harvest',
+      name: 'Dark Harvest',
+      icon: 'spell_shadow_shadesofdarkness',
+      spellId: 1221094,
       cooldown: 60,
       onResolve: (s) => {
-        s.damage('soul_rot', SOUL_ROT_HIT)
-        s.gain(1, 'soul_rot')
-        s.applyAura('player', 'succulent_soul', { stacks: 2 }) // S2 4pc
-        for (let i = 0; i < 4; i++) {
-          s.schedule(s.time + 2 + i * 2, () => s.damage('soul_rot', SOUL_ROT_PULSE))
-        }
+        // consumes the life force of each target afflicted by your DoTs;
+        // Soul Harvester version generates Soul Shards — use at ≤2 shards
+        s.damage('dark_harvest', DARK_HARVEST_PER_DOT * dotCount(s))
+        s.gain(3, 'dark_harvest')
       },
     },
     {
@@ -163,66 +221,96 @@ export const afflictionWarlock: SpecConfig = {
       spellId: 205180,
       cooldown: 120,
       onResolve: (s) => {
+        // 12.1: Darkglare is a 20s window — Agony/Corruption/UA deal +20%
         s.applyAura('player', 'darkglare')
-        for (const id of DOT_IDS) {
-          if (s.auraRemains('target', id) > 0) s.extendAura('target', id, 8)
-        }
         for (let i = 0; i < 10; i++) {
-          s.schedule(s.time + 1 + i * 2, () => s.damage('Darkglare', GLARE_PULSE * dotCount(s)))
+          s.schedule(s.time + 1 + i * 2, () => s.damage('Darkglare', GLARE_BEAM * dotCount(s)))
         }
       },
     },
   ],
 
   actionBar: [
-    'agony', 'corruption', 'unstable_affliction', 'malefic_rapture',
-    'drain_soul', 'soul_rot', 'summon_darkglare',
+    'agony', 'corruption', 'unstable_affliction', 'haunt',
+    'drain_soul', 'dark_harvest', 'summon_darkglare',
   ],
+
+  damageMult: (s, spellId) => {
+    let mult = 1
+    if (s.auraRemains('target', 'haunt') > 0) mult *= HAUNT_AMP
+    if (s.auraRemains('target', 'unstable_affliction') > 0) mult *= TIER4PC_PER_UA // S2 4pc
+    if (s.auraRemains('player', 'darkglare') > 0
+      && (DOT_IDS as readonly string[]).includes(spellId)) mult *= DARKGLARE_DOT_MULT
+    return mult
+  },
+
+  // Cascading Calamity: recent UA recast grants haste (APPROX 5%)
+  hasteMod: (s) => (s.auraRemains('player', 'cascading_calamity') > 0 ? 0.05 : 0),
 
   glows: (s, id) => {
     switch (id) {
-      case 'malefic_rapture': return s.stacks('player', 'succulent_soul') > 0
-      case 'summon_darkglare': return s.cooldownRemains('summon_darkglare') === 0 && dotCount(s) === 3
+      case 'unstable_affliction': return freeUA(s)
+      case 'drain_soul': return s.stacks('player', 'nightfall') > 0
+      case 'summon_darkglare': return s.cooldownRemains('summon_darkglare') === 0 && s.insanity >= 3
+      case 'dark_harvest': return s.cooldownRemains('dark_harvest') === 0 && s.insanity <= 2
       default: return false
     }
   },
 
+  // shown in the UI; rows mirror `policy` below, in the same order
   priorityList: [
     { abilityId: 'agony', text: 'Keep rolling — the ramp is your shard engine (refresh <5.4s)' },
-    { abilityId: 'corruption', text: 'Keep rolling (refresh <4.2s)' },
-    { abilityId: 'unstable_affliction', text: 'Keep rolling (refresh <6.3s)' },
-    { abilityId: 'summon_darkglare', text: 'With all 3 DoTs up — extends them 8s', when: s => s.cooldownRemains('summon_darkglare') === 0 && dotCount(s) === 3 },
-    { abilityId: 'soul_rot', text: 'On cooldown once DoTs are up (4pc: 2 Succulent Souls)', when: s => s.cooldownRemains('soul_rot') === 0 && dotCount(s) === 3 },
-    { abilityId: 'malefic_rapture', text: 'Spend Succulent Souls; dump at 4+ shards or inside Darkglare', when: s => s.stacks('player', 'succulent_soul') > 0 && s.insanity >= 1 },
+    { abilityId: 'corruption', text: 'Keep rolling — its ticks proc Nightfall (refresh <4.2s)' },
+    { abilityId: 'haunt', text: 'On cooldown — amps all your damage', when: s => s.cooldownRemains('haunt') === 0 },
+    { abilityId: 'unstable_affliction', text: 'Keep the DoT + Cascading Calamity up; spend Shard Instability procs', when: s => freeUA(s) || s.auraRemains('player', 'cascading_calamity') < 4.5 },
+    { abilityId: 'dark_harvest', text: 'On cooldown at ≤2 shards — it generates 3', when: s => s.cooldownRemains('dark_harvest') === 0 && s.insanity <= 2 },
+    { abilityId: 'summon_darkglare', text: 'On cooldown at ≥3 shards — DoTs +20% for 20s, dump inside', when: s => s.cooldownRemains('summon_darkglare') === 0 && s.insanity >= 3 },
+    { abilityId: 'drain_soul', label: 'Drain Soul: Nightfall', icon: 'spell_shadow_twilight', text: 'Spend Nightfall procs — don’t overcap (2 stacks)', when: s => s.stacks('player', 'nightfall') > 0 },
+    { abilityId: 'unstable_affliction', text: 'Spend at 4+ shards — never cap' },
     { abilityId: 'drain_soul', text: 'Filler — clip freely for anything above' },
   ],
 
+  /** Oracle — Wowhead/Maxroll 12.1 ST priority for Soul Harvester. */
   policy: (s) => {
     const agony = s.auraRemains('target', 'agony')
     const corr = s.auraRemains('target', 'corruption')
-    const ua = s.auraRemains('target', 'unstable_affliction')
+    const uaDot = s.auraRemains('target', 'unstable_affliction')
     const shards = s.insanity
-    const succ = s.stacks('player', 'succulent_soul')
-    const glareUp = s.auraRemains('player', 'darkglare') > 0
+    const canUA = shards >= 1 || freeUA(s)
 
-    if (agony <= 0) return 'agony'
-    if (corr <= 0) return 'corruption'
-    if (ua <= 0) return 'unstable_affliction'
-    // pandemic refreshes
-    if (agony < 18 * 0.3) return 'agony'
-    if (corr < 14 * 0.3) return 'corruption'
-    if (ua < 21 * 0.3) return 'unstable_affliction'
+    // DoT upkeep first — everything scales off them
+    if (agony <= 0 || agony < 18 * 0.3) return 'agony'
+    if (corr <= 0 || corr < 14 * 0.3) return 'corruption'
 
-    if (s.cooldownRemains('summon_darkglare') === 0) return 'summon_darkglare'
-    if (s.cooldownRemains('soul_rot') === 0) return 'soul_rot'
+    // haunt: on cooldown
+    if (s.cooldownRemains('haunt') === 0) return 'haunt'
 
-    if (shards >= 1 && (succ > 0 || shards >= 4 || glareUp)) return 'malefic_rapture'
+    // unstable_affliction: keep the DoT and Cascading Calamity up; never
+    // sit on a Shard Instability proc
+    if (canUA && (uaDot <= 0 || freeUA(s) || s.auraRemains('player', 'cascading_calamity') < 4.5)) {
+      return 'unstable_affliction'
+    }
+
+    // dark_harvest: on cooldown at ≤2 shards (it generates 3)
+    if (s.cooldownRemains('dark_harvest') === 0 && shards <= 2) return 'dark_harvest'
+
+    // summon_darkglare: on cooldown at ≥3 shards, with all DoTs ticking
+    if (s.cooldownRemains('summon_darkglare') === 0 && shards >= 3 && dotCount(s) === 3) return 'summon_darkglare'
+
+    // drain_soul with Nightfall
+    if (s.stacks('player', 'nightfall') > 0) return 'drain_soul'
+
+    // unstable_affliction: never cap shards (aggressive spending also
+    // shaves Dark Harvest's cooldown)
+    if (shards >= 4) return 'unstable_affliction'
+
+    // filler
     return 'drain_soul'
   },
 
   equivalentChoices: (_s, pressed, oracle) => {
-    const dotRefresh = ['agony', 'corruption', 'unstable_affliction']
-    const spenders = ['malefic_rapture', 'drain_soul']
+    const dotRefresh = ['agony', 'corruption']
+    const spenders = ['unstable_affliction', 'drain_soul']
     const sets = [dotRefresh, spenders]
     return sets.some(set => set.includes(pressed) && set.includes(oracle))
   },

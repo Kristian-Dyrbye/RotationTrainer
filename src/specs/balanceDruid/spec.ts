@@ -2,21 +2,33 @@ import type { SimAPI, SpecConfig } from '../../engine/types'
 
 /**
  * Balance Druid — patch 12.1.0 (Midnight, Season 2), Elune's Chosen raid ST
- * build with the S2 tier 2pc+4pc. Built from the simc `midnight` APL/source
- * and Icy Veins/Method/Maxroll/Dreamgrove 12.1 guides.
+ * build with the S2 "Bark of the Enigmatic Dreamwatcher" tier 2pc+4pc.
+ * Sources (verified 2026-08-24):
+ *  - Wowhead rotation guide: https://www.wowhead.com/guide/classes/druid/balance/rotation-cooldowns-pve-dps
+ *  - Icy Veins rotation: https://www.icy-veins.com/wow/balance-druid-pve-dps-rotation-cooldowns-abilities
+ *  - Icy Veins builds (raid ST = Elune's Chosen, source of the import string):
+ *    https://www.icy-veins.com/wow/balance-druid-pve-dps-spec-builds-talents
+ *  - Maxroll raid guide: https://maxroll.gg/wow/class-guides/balance-druid-raid-guide
+ *  - Method: https://www.method.gg/guides/balance-druid/playstyle-and-rotation
  *
  * Key 12.x facts encoded here (TWW priors are wrong): Eclipse is an ACTIVATED
- * button now (2 charges w/ Improved Eclipse, ~29s w/ Sculpt the Stars),
- * Moonfire/Sunfire generate 0 AP, and with Lunar Calling the build is
- * Lunar-only — Starfire is the sole filler.
+ * ability now (2 charges, ~32s recharge), Moonfire/Sunfire generate 0 AP,
+ * and with Lunar Calling the build is Lunar-only — Starfire is the sole
+ * filler and Solar Eclipse cannot be entered. Enter Eclipse/Incarnation with
+ * high Astral Power and unload spenders immediately; never cap AP (Maxroll:
+ * spend above ~82/100 ≈ 98/120 here). Note: Icy Veins + Maxroll recommend
+ * Elune's Chosen for raid ST (modeled here); Wowhead/Method's "typical ST"
+ * list assumes Keeper of the Grove instead (Force of Nature-centric).
  *
- * Talent assumptions: Lunar Calling, Improved Eclipse, Sculpt the Stars,
- * Astral Communion (cap 120), Nature's Balance, Shooting Stars, Orbit
- * Breaker, Starweaver, Touch the Cosmos, Power of Goldrinn, Starlord,
- * Fury of Elune + Boundless Moonlight, Force of Nature, Convoke,
- * Incarnation + Whirling Stars, Apex: Ascendant Eclipses 3/3.
- * APPROX-flagged constants need verification (treant/convoke damage, Wrath AP).
- * The player starts in Moonkin Form.
+ * Talent assumptions (confirmed on the IV raid ST build): Lunar Calling,
+ * Improved Eclipse, Astral Communion (cap 120), Shooting Stars, Orbit
+ * Breaker, Starweaver, Touch the Cosmos, Starlord, Fury of Elune +
+ * Boundless Moonlight, Convoke, Incarnation. APPROX assumptions kept from
+ * pre-S2 research: Nature's Balance, Power of Goldrinn, Whirling Stars
+ * (Incarnation 2 charges @120s), Apex: Ascendant Eclipses (3 empowered
+ * spenders + instant filler + Lunar Bolts on Eclipse entry). Other APPROX:
+ * all damage coefficients, Wrath AP gen, convoke condensed to a 16-tick
+ * channel, proc rates. The player starts in Moonkin Form.
  */
 
 const ECLIPSE_FILLER_MULT = 1.15 * 1.4 // Arcane +15%, Starfire +40% in Lunar Eclipse
@@ -27,7 +39,6 @@ const GOLDRINN_COEFF = 2.17
 const SHOOTING_STAR = 0.68
 const FULL_MOON_ORBIT = 4.2294 * 0.5   // Orbit Breaker: Full Moon at 50%
 const CONVOKE_TICK = 0.75              // APPROX: 16-cast channel condensed
-const TREANT_PULSE = 0.25              // APPROX: treant damage unpublished
 
 function eclipseUp(s: SimAPI): boolean {
   return s.auraRemains('player', 'lunar_eclipse') > 0 || s.auraRemains('player', 'incarnation') > 0
@@ -75,6 +86,14 @@ export const balanceDruid: SpecConfig = {
   name: 'Balance Druid',
   specId: 'druid-balance',
   specIcon: 'spell_nature_starfall',
+  source: {
+    guideUrl: 'https://www.wowhead.com/guide/classes/druid/balance/rotation-cooldowns-pve-dps',
+    buildName: 'Elune\'s Chosen Raid Single-Target (Lunar Calling)',
+    heroTalent: 'Elune\'s Chosen',
+    // Icy Veins "Single-Target (Elune's Chosen - Raid)" export string
+    talentString: 'CYGAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWoMbNjxMD8AmFzMzMLMMMmZZGGzYhlZWmZMmZDDAGbLzMYMbDgJAAAALMzMzgNjZMmBAwMDWGA',
+    retrieved: '2026-08-24',
+  },
   resourceName: 'Astral Power',
   resourceMax: 120, // Astral Communion
   startingResource: 50,
@@ -115,10 +134,6 @@ export const balanceDruid: SpecConfig = {
       id: 'fury_of_elune', name: 'Fury of Elune', icon: 'ability_druid_dreamstate', duration: 8,
       tick: { interval: 0.5, hasted: false, onTick: s => { s.damage('fury_of_elune', 0.1834); s.gain(2.5, 'foe') } },
       onExpire: s => s.damage('fury_of_elune', 2.1632), // Boundless Moonlight ending blast
-    },
-    {
-      id: 'treants', name: 'Force of Nature', icon: 'ability_druid_forceofnature', duration: 10,
-      tick: { interval: 1, hasted: false, onTick: s => s.damage('Treants', TREANT_PULSE) },
     },
     {
       id: 'convoke', name: 'Convoke the Spirits', icon: 'inv_ability_druid_convokethespirits', duration: 4,
@@ -211,8 +226,8 @@ export const balanceDruid: SpecConfig = {
       name: 'Eclipse',
       icon: 'ability_druid_eclipse',
       spellId: 1233272,
-      cooldown: 29, // Sculpt the Stars
-      charges: 2,   // Improved Eclipse
+      cooldown: 32, // 12.x baseline: 2-charge active ability, 32s recharge
+      charges: 2,
       usable: (s) => (eclipseUp(s) ? 'an Eclipse is already active' : true),
       onResolve: (s) => enterEclipse(s),
     },
@@ -245,22 +260,11 @@ export const balanceDruid: SpecConfig = {
       cooldown: 60,
       onResolve: (s) => s.applyAura('player', 'fury_of_elune'),
     },
-    {
-      id: 'force_of_nature',
-      name: 'Force of Nature',
-      icon: 'ability_druid_forceofnature',
-      spellId: 205636,
-      cooldown: 60,
-      onResolve: (s) => {
-        s.gain(20, 'fon')
-        s.applyAura('player', 'treants')
-      },
-    },
   ],
 
   actionBar: [
     'starfire', 'wrath', 'starsurge', 'starfall', 'moonfire', 'sunfire',
-    'eclipse', 'incarnation', 'convoke', 'fury_of_elune', 'force_of_nature',
+    'eclipse', 'incarnation', 'convoke', 'fury_of_elune',
   ],
 
   damageMult: (s) => {
@@ -290,13 +294,12 @@ export const balanceDruid: SpecConfig = {
   priorityList: [
     { abilityId: 'sunfire', text: 'Keep up — refresh in pandemic (<5.4s), ideally outside Eclipse' },
     { abilityId: 'moonfire', text: 'Keep up — refresh in pandemic (<5.4s), ideally outside Eclipse' },
-    { abilityId: 'fury_of_elune', text: 'On cooldown — 40 Astral Power into the window', when: s => s.cooldownRemains('fury_of_elune') === 0 },
-    { abilityId: 'force_of_nature', text: 'On cooldown', when: s => s.cooldownRemains('force_of_nature') === 0 },
+    { abilityId: 'fury_of_elune', text: 'On cooldown — ~40 Astral Power into the window; align with Eclipse when possible', when: s => s.cooldownRemains('fury_of_elune') === 0 },
     { abilityId: 'incarnation', text: 'On cooldown, entered with high Astral Power (spend Ascendant Stars fast)', when: s => s.cooldownRemains('incarnation') === 0 },
     { abilityId: 'convoke', text: 'Inside Incarnation while under 40 AP', when: s => s.cooldownRemains('convoke') === 0 },
-    { abilityId: 'eclipse', text: 'Press with high AP, before charges cap — never while one is active', when: s => s.cooldownRemains('eclipse') === 0 },
+    { abilityId: 'eclipse', text: 'On cooldown with high AP — never sit at 2 charges, never while one is active', when: s => s.cooldownRemains('eclipse') === 0 },
     { abilityId: 'starfall', text: 'Free proc (Starweaver’s Warp) — cast even on single target', when: s => s.auraRemains('player', 'starweavers_warp') > 0 },
-    { abilityId: 'starsurge', text: 'Spend in Eclipse; consume free procs; never cap Astral Power' },
+    { abilityId: 'starsurge', text: 'Spend in Eclipse (immediately on entry); consume free procs; never cap Astral Power (spend above ~98)' },
     { abilityId: 'starfire', text: 'Filler (Lunar Calling) — always be casting' },
   ],
 
@@ -304,14 +307,12 @@ export const balanceDruid: SpecConfig = {
     // never clip an in-progress Convoke
     if (s.casting?.channel && s.casting.abilityId === 'convoke') return null
     const ecl = eclipseUp(s)
-    const deficit = 120 - s.insanity
     const sfRemains = s.auraRemains('target', 'sunfire_dot')
     const mfRemains = s.auraRemains('target', 'moonfire_dot')
 
     if (sfRemains < 2 || (sfRemains < 5.4 && !ecl)) return 'sunfire'
     if (mfRemains < 2 || (mfRemains < 5.4 && !ecl)) return 'moonfire'
     if (s.cooldownRemains('fury_of_elune') === 0) return 'fury_of_elune'
-    if (s.cooldownRemains('force_of_nature') === 0) return 'force_of_nature'
     if (s.isUsable('incarnation') === true && s.timeToUsable('incarnation') === 0 && s.insanity >= 80) return 'incarnation'
     if (s.auraRemains('player', 'incarnation') > 0 && s.insanity < 40
       && s.isUsable('convoke') === true && s.timeToUsable('convoke') === 0) return 'convoke'
@@ -320,7 +321,7 @@ export const balanceDruid: SpecConfig = {
     if (s.auraRemains('player', 'starweavers_warp') > 0) return 'starfall'
     if (s.auraRemains('player', 'touch_the_cosmos') > 0 || s.auraRemains('player', 'starweavers_weft') > 0) return 'starsurge'
     if (ecl && s.insanity >= 40) return 'starsurge'
-    if (!ecl && deficit < 20 && s.insanity >= 40) return 'starsurge' // anti-overcap
+    if (!ecl && s.insanity > 98) return 'starsurge' // anti-overcap (Maxroll: spend above ~82/100)
     return 'starfire'
   },
 

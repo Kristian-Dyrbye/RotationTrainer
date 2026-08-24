@@ -1,28 +1,36 @@
 import type { SimAPI, SpecConfig } from '../../engine/types'
 
 /**
- * Shadow Priest — patch 12.1.0 (Midnight, Season 2), Archon raid single-target build
- * with the Season 2 "Cosmic Penitent" 2pc+4pc.
+ * Shadow Priest — patch 12.1.0 (Midnight, Season 2), Archon raid single-target
+ * build with the Season 2 tier 2pc+4pc (Tentacle Slam CD -3s / +100% damage;
+ * Slam grants a free Void Volley). Verified against live guides 2026-08-24:
+ *   - Wowhead rotation guide: https://www.wowhead.com/guide/classes/priest/shadow/rotation-cooldowns-pve-dps
+ *   - Method "Archon Raid" build + rotation: https://www.method.gg/guides/shadow-priest/playstyle-and-rotation
+ *   - Icy Veins rotation: https://www.icy-veins.com/wow/shadow-priest-pve-dps-rotation-cooldowns-abilities
+ *   - Maxroll raid guide: https://maxroll.gg/wow/class-guides/shadow-priest-raid-guide
  *
- * Damage numbers are spell-power coefficients from live Wowhead tooltips
- * (2026-08-20). Proc models follow simc's `midnight` branch. Numbers marked
- * APPROX could not be confirmed from any source and need verification against
- * simc SpellQuery — see PLAN.md phase 0.
+ * Talent assumptions (Method "Archon Raid" build): Invoked Nightmare (manual
+ * SW:P upkeep; Icy Veins defaults to Misery here instead), Improved Voidform
+ * (+2 Void Volley uses, extra Voidform damage — taken over Ancient Madness),
+ * Mind's Eye (SW:Madness costs 45), Mind Devourer, Idol of Y'Shaarj,
+ * Apex: Void Apparitions 4/4; Archon keystones Power Surge + Manifested Power
+ * (each Halo wave grants Mind Flay: Insanity).
  *
- * Talent assumptions (Method "Archon Raid" build): Invoked Nightmare,
- * Thought Harvester, Idol of Y'Shaarj, Ancient Madness, Mind Devourer,
- * Apex: Void Apparitions 4/4.
- * Simplifications: no Deathspeaker execute (dummy sits at 100% HP), Ancient
- * Madness haste stacks not modeled (duration extension is), Power Surge
- * modeled as 3 halo waves.
+ * Damage numbers are APPROX spell-power coefficients — sane relative
+ * magnitudes only, not simc-verified. Simplifications: no Deathspeaker /
+ * SW:Death execute (dummy sits at 100% HP), Thought Harvester dropped per
+ * Icy Veins (Mind Blast back to one charge), Power Surge modeled as 3 halo
+ * waves.
  */
 
-const VOIDFORM_DMG = 1.2
+const VOIDFORM_DMG = 1.25     // 20% base + 5% Improved Voidform (APPROX split)
 const PI_HASTE = 0.2          // APPROX: 12.1 PI numbers unverified
 const APPARITION_COEFF = 0.55 // APPROX: 12.1 apparition coefficient unpublished
 const VOID_BOLT_COEFF = 1.5 * 1.35 // Apex Void Bolt, incl. 2026-03-31 +35% hotfix
 const VOID_VOLLEY_COEFF = 4.0 // APPROX: tooltip ambiguous (95.44% per-bolt vs total)
 const SWM_DOT_TOTAL = 0.5     // APPROX: "small DoT" — exact coefficient unpublished
+const SWM_COST = 45           // 50 base, -5 from Mind's Eye
+const VF_VOLLEY_USES = 5      // 3 base + 2 from Improved Voidform
 const MFI_MAX_CHARGES = 2
 
 /** Apex R1/R4 + Idol of Y'Shaarj loop: apparitions stack the idol; idol
@@ -65,6 +73,14 @@ export const shadowPriest: SpecConfig = {
   name: 'Shadow Priest',
   specId: 'priest-shadow',
   specIcon: 'spell_shadow_shadowform',
+  source: {
+    guideUrl: 'https://www.wowhead.com/guide/classes/priest/shadow/rotation-cooldowns-pve-dps',
+    buildName: 'Archon Raid (Method default raid build)',
+    heroTalent: 'Archon',
+    // published verbatim on method.gg/guides/shadow-priest/talents (also mirrored by Icy Veins)
+    talentString: 'CIQAAAAAAAAAAAAAAAAAAAAAAMMDDAAAAAAAAAAAAmZxMmZbmxMz2MGzw2MzYmZGbIzYxMNAzAMzmZY2MAkxYBAzMgxMzMmNmZbZAmBDA',
+    retrieved: '2026-08-24',
+  },
   resourceName: 'Insanity',
   resourceMax: 100,
   startingResource: 0,
@@ -188,8 +204,7 @@ export const shadowPriest: SpecConfig = {
       icon: 'spell_shadow_unholyfrenzy',
       spellId: 8092,
       castTime: 1.5,
-      cooldown: 9,
-      charges: 2, // Thought Harvester
+      cooldown: 9, // one charge: Thought Harvester not taken in 12.1 raid builds
       castTimeMod: (s, base) => (s.stacks('player', 'shadowy_insight') > 0 ? 0 : base),
       noCooldownIf: (s) => s.stacks('player', 'shadowy_insight') > 0,
       onCastStart: (s) => {
@@ -211,20 +226,14 @@ export const shadowPriest: SpecConfig = {
       name: 'Shadow Word: Madness',
       icon: 'inv12_ability_priest_powerwordmadness_eye',
       spellId: 335467,
-      cost: 50,
-      costMod: (s) => (s.stacks('player', 'mind_devourer') > 0 ? 0 : 50),
+      cost: SWM_COST, // Mind's Eye: -5 Insanity
+      costMod: (s) => (s.stacks('player', 'mind_devourer') > 0 ? 0 : SWM_COST),
       onResolve: (s) => {
         const devoured = s.stacks('player', 'mind_devourer') > 0
         if (devoured) s.removeAura('player', 'mind_devourer')
         s.damage('shadow_word_madness', 2.275 * (devoured ? 1.2 : 1))
         s.applyAura('target', 'swm_dot')
         spawnApparitions(s, 1)
-        // Ancient Madness: each SW:M in Voidform extends it 1.5s, 5 times
-        const vf = s.aura('player', 'voidform')
-        if (vf && (vf.data.ext ?? 0) < 5) {
-          vf.data.ext = (vf.data.ext ?? 0) + 1
-          s.extendAura('player', 'voidform', 1.5)
-        }
       },
     },
     {
@@ -326,7 +335,7 @@ export const shadowPriest: SpecConfig = {
           s.damage('Void Volley', VOID_VOLLEY_COEFF)
         } else {
           s.applyAura('player', 'voidform')
-          grantVoidVolley(s, 3)
+          grantVoidVolley(s, VF_VOLLEY_USES) // 3 base + 2 Improved Voidform
           s.damage('Void Volley', VOID_VOLLEY_COEFF) // fires a Void Volley on cast
         }
       },
@@ -363,80 +372,72 @@ export const shadowPriest: SpecConfig = {
 
   // shown in the UI; rows mirror `policy` below, in the same order
   priorityList: [
+    { abilityId: 'shadow_word_pain', text: 'Keep up — refresh in the pandemic window (<4.8s left)', when: s => s.auraRemains('target', 'swp_dot') < 16 * 0.3 },
+    { abilityId: 'tentacle_slam', text: 'Keep Vampiric Touch up (Slam applies it)', when: s => s.auraRemains('target', 'vt_dot') < 21 * 0.3 && s.isUsable('tentacle_slam') === true },
+    { abilityId: 'vampiric_touch', text: 'Hard-cast only if Tentacle Slam has no charge', when: s => s.auraRemains('target', 'vt_dot') < 21 * 0.3 && s.isUsable('tentacle_slam') !== true },
     { abilityId: 'halo', text: 'On cooldown, once both DoTs are up', when: s => s.cooldownRemains('halo') === 0 },
     { abilityId: 'voidform', text: 'On cooldown (dump blocking Volley charges first)', when: s => s.cooldownRemains('voidform') === 0 },
     { abilityId: 'power_infusion', text: 'During Voidform', when: s => s.auraRemains('player', 'voidform') > 0 && s.cooldownRemains('power_infusion') === 0 },
     { abilityId: 'shadow_word_madness', text: 'Expiring, Mind Devourer proc, ≥65 Insanity (no Voidform soon), or in Voidform' },
-    { abilityId: 'voidform', label: 'Void Volley', icon: 'inv12_ability_priest_voidvolley', text: 'Spend charges inside Voidform', when: s => s.auraRemains('player', 'voidform') > 0 && s.stacks('player', 'void_volley_charge') > 0 },
-    { abilityId: 'tentacle_slam', text: 'VT needs refreshing, or 2 charges about to cap' },
-    { abilityId: 'shadow_word_pain', text: 'Refresh in the pandemic window (<4.8s left)' },
-    { abilityId: 'mind_blast', text: 'Keep charges rolling (Shadowy Insight = free instant)' },
+    { abilityId: 'voidform', label: 'Void Volley', icon: 'inv12_ability_priest_voidvolley', text: 'Spend charges — in Voidform, and weave 4pc charges outside it', when: s => s.stacks('player', 'void_volley_charge') > 0 },
+    { abilityId: 'tentacle_slam', text: 'Don’t sit at 2 charges (about to waste one)' },
+    { abilityId: 'mind_blast', text: 'On cooldown (Shadowy Insight = free instant)' },
     { abilityId: 'mind_flay', text: 'Mind Flay: Insanity proc, while SW:M is ticking', when: s => s.stacks('player', 'mfi_charge') > 0 },
-    { abilityId: 'vampiric_touch', text: 'Hard-cast only if Tentacle Slam can’t cover it' },
-    { abilityId: 'voidform', label: 'Void Volley', icon: 'inv12_ability_priest_voidvolley', text: 'Leftover 4pc charges before filler', when: s => s.stacks('player', 'void_volley_charge') > 0 },
     { abilityId: 'mind_flay', text: 'Filler — always be casting' },
   ],
 
   /**
-   * Oracle — hand-translated from simc midnight `actions.main` + `actions.cds`
-   * (single target, Archon), simplified to this kit. Comments cite the APL line.
+   * Oracle — the live-guide Archon single-target priority (Wowhead / Method /
+   * Maxroll, 2026-08-24), simplified to this kit: DoTs → Halo → Voidform →
+   * PI → SW:Madness → Void Volley → Slam charges → Mind Blast → MF:I → MF.
    */
   policy: (s) => {
     const gcd = s.gcdLength()
     const vfUp = s.auraRemains('player', 'voidform') > 0
     const vfCd = s.cooldownRemains('voidform')
-    const swpUp = s.auraRemains('target', 'swp_dot') > 0
-    const vtUp = s.auraRemains('target', 'vt_dot') > 0
-    const dotsUp = swpUp && vtUp
     const swmRemains = s.auraRemains('target', 'swm_dot')
-    const canSpend = s.insanity >= 50 || s.stacks('player', 'mind_devourer') > 0
+    const canSpend = s.insanity >= SWM_COST || s.stacks('player', 'mind_devourer') > 0
 
-    // cds: halo → voidform → power_infusion, once dots are rolling.
+    // 1-2. DoTs first — apply before cooldown windows, refresh in pandemic.
+    // Invoked Nightmare SW:P is manual; VT comes from Tentacle Slam, with a
+    // hard-cast fallback when both Slam charges are down.
+    if (s.auraRemains('target', 'swp_dot') < 16 * 0.3) return 'shadow_word_pain'
+    if (s.auraRemains('target', 'vt_dot') < 21 * 0.3) {
+      return s.isUsable('tentacle_slam') === true ? 'tentacle_slam' : 'vampiric_touch'
+    }
+
+    // 3-5. cds: halo → voidform → power_infusion.
     // (with volley charges up, pressing 'voidform' fires Void Volley — dumping
     // the charges is what unlocks the actual Voidform cast, so the same
     // button-priority covers both, exactly like in game)
-    if (dotsUp) {
-      if (s.isUsable('halo') === true && s.timeToUsable('halo') === 0) return 'halo'
-      if (s.cooldownRemains('voidform') === 0 && s.isUsable('voidform') === true) return 'voidform'
-      if (vfUp && s.isUsable('power_infusion') === true) return 'power_infusion'
-    }
+    if (s.isUsable('halo') === true && s.timeToUsable('halo') === 0) return 'halo'
+    if (vfCd === 0 && s.isUsable('voidform') === true) return 'voidform'
+    if (vfUp && s.isUsable('power_infusion') === true) return 'power_infusion'
 
-    // shadow_word_madness: expiring | mind_devourer | deficit<=35 outside VF window | in VF
+    // 6. shadow_word_madness: expiring | mind_devourer | near-cap outside VF window | in VF
     if (canSpend && (
       swmRemains <= gcd
       || s.stacks('player', 'mind_devourer') > 0
       || (s.insanity >= 65 && vfCd > 25)
-      || (vfUp && s.insanity >= 50)
+      || (vfUp && s.insanity >= SWM_COST)
     )) return 'shadow_word_madness'
 
-    // Void Volley (the transformed Voidform button) while the burst window is up
-    if (vfUp && volleyReady(s)) return 'voidform'
+    // 7. Void Volley (the transformed Voidform button): top priority in
+    // Voidform, and weave 4pc charges into the normal rotation outside it
+    if (volleyReady(s)) return 'voidform'
 
-    // tentacle_slam: VT refreshable or about to cap charges
-    const vtRefreshable = s.auraRemains('target', 'vt_dot') < 21 * 0.3
-    if ((vtRefreshable || s.chargesOf('tentacle_slam') === 2) && s.isUsable('tentacle_slam') === true) {
+    // 8. tentacle_slam: don't sit at 2 charges
+    if (s.chargesOf('tentacle_slam') === 2 && s.isUsable('tentacle_slam') === true) {
       return 'tentacle_slam'
     }
 
-    // shadow_word_pain: Invoked Nightmare manual refresh in pandemic window
-    if (s.auraRemains('target', 'swp_dot') < 16 * 0.3 && vtUp) return 'shadow_word_pain'
-    if (!vtUp && s.isUsable('tentacle_slam') !== true) return 'vampiric_touch'
-    if (!swpUp) return 'shadow_word_pain'
+    // 9. mind_blast on cooldown
+    if (s.isUsable('mind_blast') === true && s.timeToUsable('mind_blast') === 0) return 'mind_blast'
 
-    // mind_blast unless a Mind Devourer proc is waiting to be spent
-    if (s.isUsable('mind_blast') === true && s.timeToUsable('mind_blast') === 0
-      && s.stacks('player', 'mind_devourer') === 0) return 'mind_blast'
-
-    // Mind Flay: Insanity (the transformed Mind Flay button) while SW:M is ticking
+    // 10. Mind Flay: Insanity (the transformed Mind Flay button) while SW:M is ticking
     if (s.stacks('player', 'mfi_charge') > 0 && swmRemains > 0) return 'mind_flay'
 
-    // vampiric_touch hard-cast if Tentacle Slam can't cover the refresh
-    if (vtRefreshable && s.isUsable('tentacle_slam') !== true) return 'vampiric_touch'
-
-    // leftover Void Volley charges (4pc) before filler
-    if (volleyReady(s)) return 'voidform'
-
-    // filler
+    // 11. filler (SW:Death would slot here on a sub-20% target — dummy never is)
     return 'mind_flay'
   },
 

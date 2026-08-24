@@ -2,21 +2,32 @@ import type { SimAPI, SpecConfig } from '../../engine/types'
 
 /**
  * Enhancement Shaman — patch 12.1.0 (Midnight, Season 2), Stormbringer raid
- * ST build (Icy Veins default). Built from the simc `midnight` APL/source and
- * Icy Veins/Wowhead 12.1 guides.
+ * ST build with the S2 "Ophidian Oracle's Prophecy" tier 2pc+4pc.
+ * Sources (verified 2026-08-24):
+ *  - Icy Veins rotation: icy-veins.com/wow/enhancement-shaman-pve-dps-rotation-cooldowns-abilities
+ *  - Icy Veins builds (talent string): icy-veins.com/wow/enhancement-shaman-pve-dps-spec-builds-talents
+ *  - Method: method.gg/guides/enhancement-shaman/playstyle-and-rotation
  *
  * Resource model: Maelstrom Weapon (max 10) as the primary bar — built by
- * dual-wield autos, Stormstrike, Lava Lash, and Feral Spirits; spent 5-10 at
- * a time on instant Lightning Bolt / Elemental Blast (both gated at 5+, so
- * they are always instant here). Mana is not modeled.
+ * dual-wield autos, Stormstrike, Lava Lash, Crash Lightning, and Static
+ * Accumulation during Doom Winds; spent at 10 (5+ as last-resort filler) on
+ * instant Tempest / Lightning Bolt. Mana is not modeled.
  * Stat links: swing speed is hasted (more autos → more Maelstrom, Windfury
- * and Hot Hand rolls); Stormsurge procs off the real crit chance.
- * Talent assumptions: Windfury 20% (60% under Doom Winds), Hot Hand,
- * Stormbringer — every 40 Maelstrom spent charges a Tempest that transforms
- * the Lightning Bolt button; Apex: Storm's Legacy 3/3 (each Tempest grants
- * Stormsurge). S2 tier: 2pc Stormstrike +20% folded into the coefficient;
- * 4pc Feral Spirits grants Stormsurge on cast. APPROX-flagged: proc rates,
- * auto cadence, per-stack spender scaling. Damage in AP units.
+ * and Hot Hand rolls); direct damage crits are expected-value via the engine.
+ * Talent assumptions (Icy Veins "Raid / Single Target - Stormbringer"):
+ * Voltaic Blaze (replaces Flame Shock upkeep), Crash Lightning, Ascendance
+ * with Descending Skies (grants a Tempest; Stormstrike becomes Windstrike),
+ * Doom Winds + Thorim's Invocation (free bolts while filling the window),
+ * Elemental Tempo (spenders CDR the strikes), Thunder Capacitor (20% full
+ * Maelstrom refund on Lightning Bolt), Hot Hand, Stormbringer — every 40
+ * Maelstrom spent charges a Tempest that transforms the Lightning Bolt
+ * button; Apex: Storm Unleashed 4/4 (folded into Crash/Tempest coefficients).
+ * S2 tier: 2pc Voltaic Blaze erupts a Fire Nova on the target every 2s for
+ * 6s (200% to primary folded in); 4pc each Fire Nova pulse reduces Crash
+ * Lightning's cooldown by 2s and charges it +8%, stacking to 5.
+ * APPROX-flagged: proc rates, auto cadence, per-stack spender scaling,
+ * Voltaic Blaze / Crash Lightning cooldowns, Elemental Tempo CDR amount.
+ * Damage in AP units.
  */
 
 const AUTO_COEFF = 0.30
@@ -25,16 +36,21 @@ const WF_COEFF = 0.55
 const WF_CHANCE = 0.20
 const WF_DOOM_CHANCE = 0.60     // during Doom Winds
 const HOT_HAND_CHANCE = 0.05    // APPROX per swing
-const SS_COEFF = 1.5            // both hands, incl. S2 2pc +20%
+const SS_COEFF = 1.4            // both hands
+const WINDSTRIKE_MULT = 1.3     // Ascendance-transformed Stormstrike
 const LL_COEFF = 1.05
 const HOT_HAND_MULT = 1.4
 const LB_PER_MSW = 0.19         // APPROX per stack spent
-const EB_PER_MSW = 0.30         // APPROX per stack spent
 const TEMPEST_COEFF = 2.8
-const FS_DIRECT = 0.35
+const VB_DIRECT = 1.2
+const FIRE_NOVA = 0.55          // APPROX per 2pc pulse, 200%-to-primary folded in
+const CRASH_COEFF = 1.15
+const CRASH_PER_STACK = 0.08    // 4pc: +8% per Fire Nova charge, max 5
+const THORIM_BOLT = 0.8         // APPROX Thorim's Invocation free bolt
 const FS_TICK = 0.30
-const WOLF_PULSE = 0.25
 const TEMPEST_THRESHOLD = 40    // Maelstrom spent per Tempest
+const TC_REFUND_CHANCE = 0.20   // Thunder Capacitor
+const TEMPO_CDR = 0.3           // APPROX Elemental Tempo: strike CDR per stack spent
 
 function spendMsw(s: SimAPI): number {
   const n = Math.min(10, Math.floor(s.insanity))
@@ -44,11 +60,28 @@ function spendMsw(s: SimAPI): number {
     s.data.msw_total -= TEMPEST_THRESHOLD
     s.applyAura('player', 'tempest_proc')
   }
+  // Elemental Tempo: spenders feed cooldown reduction back to the strikes
+  for (const id of ['stormstrike', 'lava_lash', 'crash_lightning']) {
+    s.reduceCooldown(id, TEMPO_CDR * n)
+  }
   return n
 }
 
 function tempestReady(s: SimAPI): boolean {
   return s.auraRemains('player', 'tempest_proc') > 0
+}
+
+function ascUp(s: SimAPI): boolean {
+  return s.auraRemains('player', 'ascendance') > 0
+}
+
+function doomUp(s: SimAPI): boolean {
+  return s.auraRemains('player', 'doom_winds') > 0
+}
+
+/** Thorim's Invocation: strikes thrown during Doom Winds fire a free bolt */
+function thorimBolt(s: SimAPI) {
+  if (doomUp(s)) s.damage("Thorim's Invocation", THORIM_BOLT)
 }
 
 export const enhancementShaman: SpecConfig = {
@@ -59,13 +92,22 @@ export const enhancementShaman: SpecConfig = {
   resourceMax: 10,
   startingResource: 0,
 
+  source: {
+    guideUrl: 'https://www.wowhead.com/guide/classes/shaman/enhancement/rotation-cooldowns-pve-dps',
+    buildName: 'Stormbringer Raid ST',
+    heroTalent: 'Stormbringer',
+    // Icy Veins "Raid / Single Target - Stormbringer" import code
+    talentString: 'CcQAAAAAAAAAAAAAAAAAAAAAAMzMzgZmZmZmhZmZAAAAAAAAA2AsZGDbwCMDDNYBgZZGzMjllZgZmNWmZmZYYMDAwMMmZMzEYmBDGDA',
+    retrieved: '2026-08-24',
+  },
+
   onCombatStart: (s) => {
     // dual-wield autos: hasted; each swing builds Maelstrom and rolls
-    // Windfury (doubled-up under Doom Winds) and Hot Hand
+    // Windfury (tripled-up under Doom Winds) and Hot Hand
     const swing = () => {
       s.damage('Auto Attack', AUTO_COEFF)
       s.gain(1, 'auto_msw')
-      const wfChance = s.auraRemains('player', 'doom_winds') > 0 ? WF_DOOM_CHANCE : WF_CHANCE
+      const wfChance = doomUp(s) ? WF_DOOM_CHANCE : WF_CHANCE
       if (s.rng('windfury') < wfChance) s.damage('Windfury', WF_COEFF)
       if (s.rng('hot_hand') < HOT_HAND_CHANCE) s.applyAura('player', 'hot_hand')
       s.schedule(s.time + SWING_TIME * s.hasteMult(), swing)
@@ -74,20 +116,16 @@ export const enhancementShaman: SpecConfig = {
   },
 
   auras: [
-    { id: 'stormsurge', name: 'Stormsurge', icon: 'spell_nature_stormreach', duration: 12 },
     { id: 'hot_hand', name: 'Hot Hand', icon: 'spell_fire_playingwithfire', duration: 8 },
     { id: 'tempest_proc', name: 'Tempest', icon: 'spell_nature_callstorm', duration: 25 },
-    { id: 'doom_winds', name: 'Doom Winds', icon: 'spell_nature_cyclone', duration: 8 },
     {
-      id: 'feral_spirits', name: 'Feral Spirits', icon: 'spell_shaman_feralspirit', duration: 15,
-      tick: {
-        interval: 1.5, hasted: false,
-        onTick: (s) => {
-          s.damage('Feral Spirit', WOLF_PULSE)
-          s.gain(1, 'feral_spirits')
-        },
-      },
+      id: 'doom_winds', name: 'Doom Winds', icon: 'spell_nature_cyclone', duration: 8,
+      // Static Accumulation: the window floods Maelstrom Weapon
+      tick: { interval: 1, hasted: false, onTick: s => s.gain(1, 'static_accumulation') },
     },
+    { id: 'ascendance', name: 'Ascendance', icon: 'spell_fire_elementaldevastation', duration: 15 },
+    // S2 4pc: Fire Nova pulses charge the next Crash Lightning, +8% each
+    { id: 'charged_crash', name: 'Charged Crash Lightning', icon: 'spell_shaman_crashlightning', duration: 30, maxStacks: 5 },
     {
       id: 'flame_shock', name: 'Flame Shock', icon: 'spell_fire_flameshock', duration: 18, pandemic: true, debuff: true,
       tick: { interval: 2, hasted: true, onTick: s => s.damage('flame_shock', FS_TICK) },
@@ -96,18 +134,54 @@ export const enhancementShaman: SpecConfig = {
 
   abilities: [
     {
+      id: 'voltaic_blaze',
+      name: 'Voltaic Blaze',
+      icon: 'inv_10_dungeonjewelry_primalist_trinket_1ragingelement_fire',
+      spellId: 470057,
+      cooldown: 15, // APPROX
+      onResolve: (s) => {
+        s.damage('voltaic_blaze', VB_DIRECT, { tags: ['fire'] })
+        s.applyAura('target', 'flame_shock')
+        s.gain(1, 'voltaic_blaze')
+        // S2 2pc: the target erupts in a Fire Nova every 2s for 6s;
+        // 4pc: each pulse hastens and charges Crash Lightning
+        for (const delay of [2, 4, 6]) {
+          s.schedule(s.time + delay, () => {
+            s.damage('Fire Nova', FIRE_NOVA, { tags: ['fire'] })
+            s.reduceCooldown('crash_lightning', 2)
+            s.applyAura('player', 'charged_crash', { stacks: 1 })
+          })
+        }
+      },
+    },
+    {
+      id: 'crash_lightning',
+      name: 'Crash Lightning',
+      icon: 'spell_shaman_crashlightning',
+      spellId: 187874,
+      cooldown: 12, // APPROX; Fire Nova (4pc) and Elemental Tempo pull it down hard
+      onResolve: (s) => {
+        const stacks = s.stacks('player', 'charged_crash')
+        if (stacks > 0) s.removeAura('player', 'charged_crash')
+        s.damage('crash_lightning', CRASH_COEFF * (1 + CRASH_PER_STACK * stacks))
+        s.gain(1, 'crash_lightning')
+        thorimBolt(s)
+      },
+    },
+    {
+      // Ascendance transforms Stormstrike into cooldown-free Windstrike
       id: 'stormstrike',
       name: 'Stormstrike',
       icon: 'ability_shaman_stormstrike',
       spellId: 17364,
       cooldown: 7.5,
-      noCooldownIf: (s) => s.auraRemains('player', 'stormsurge') > 0,
+      displayName: (s) => (ascUp(s) ? 'Windstrike' : 'Stormstrike'),
+      displayIcon: (s) => (ascUp(s) ? 'ability_skyreach_four_wind' : 'ability_shaman_stormstrike'),
+      noCooldownIf: (s) => ascUp(s),
       onResolve: (s) => {
-        if (s.auraRemains('player', 'stormsurge') > 0) s.removeAura('player', 'stormsurge')
-        s.damage('stormstrike', SS_COEFF)
+        s.damage('stormstrike', SS_COEFF * (ascUp(s) ? WINDSTRIKE_MULT : 1))
         s.gain(2, 'stormstrike')
-        // Stormsurge rides the real crit chance (stat-scaling)
-        if (s.rng('stormsurge') < s.stats.critChance) s.applyAura('player', 'stormsurge')
+        thorimBolt(s)
       },
     },
     {
@@ -138,45 +212,11 @@ export const enhancementShaman: SpecConfig = {
         if (tempestReady(s)) {
           s.removeAura('player', 'tempest_proc')
           s.damage('Tempest', TEMPEST_COEFF * (1 + 0.05 * (n - 5)))
-          s.applyAura('player', 'stormsurge') // Apex: Storm's Legacy
         } else {
           s.damage('lightning_bolt', LB_PER_MSW * n)
         }
-      },
-    },
-    {
-      id: 'elemental_blast',
-      name: 'Elemental Blast',
-      icon: 'shaman_talent_elementalblast',
-      spellId: 117014,
-      cooldown: 15,
-      usable: (s) => (s.insanity >= 5 ? true : 'needs 5+ Maelstrom Weapon'),
-      onResolve: (s) => {
-        const n = spendMsw(s)
-        s.spend(n)
-        s.damage('elemental_blast', EB_PER_MSW * n)
-      },
-    },
-    {
-      id: 'flame_shock',
-      name: 'Flame Shock',
-      icon: 'spell_fire_flameshock',
-      spellId: 188389,
-      cooldown: 6,
-      onResolve: (s) => {
-        s.damage('flame_shock', FS_DIRECT, { tags: ['fire'] })
-        s.applyAura('target', 'flame_shock')
-      },
-    },
-    {
-      id: 'feral_spirits',
-      name: 'Feral Spirits',
-      icon: 'spell_shaman_feralspirit',
-      spellId: 51533,
-      cooldown: 90,
-      onResolve: (s) => {
-        s.applyAura('player', 'feral_spirits')
-        s.applyAura('player', 'stormsurge') // S2 4pc
+        // Thunder Capacitor: 20% to refund everything spent
+        if (s.rng('thunder_capacitor') < TC_REFUND_CHANCE) s.gain(n, 'thunder_capacitor')
       },
     },
     {
@@ -187,58 +227,66 @@ export const enhancementShaman: SpecConfig = {
       cooldown: 60,
       onResolve: (s) => s.applyAura('player', 'doom_winds'),
     },
+    {
+      id: 'ascendance',
+      name: 'Ascendance',
+      icon: 'spell_fire_elementaldevastation',
+      spellId: 114051,
+      cooldown: 120,
+      onResolve: (s) => {
+        s.applyAura('player', 'ascendance')
+        s.applyAura('player', 'tempest_proc') // Descending Skies: Ascendance grants a Tempest
+      },
+    },
   ],
 
   actionBar: [
-    'stormstrike', 'lava_lash', 'lightning_bolt', 'elemental_blast',
-    'flame_shock', 'feral_spirits', 'doom_winds',
+    'stormstrike', 'crash_lightning', 'lava_lash', 'lightning_bolt',
+    'voltaic_blaze', 'doom_winds', 'ascendance',
   ],
 
   glows: (s, id) => {
     switch (id) {
-      case 'stormstrike': return s.auraRemains('player', 'stormsurge') > 0
+      case 'stormstrike': return ascUp(s) || doomUp(s)
+      case 'crash_lightning': return s.stacks('player', 'charged_crash') >= 5
       case 'lava_lash': return s.auraRemains('player', 'hot_hand') > 0
-      case 'lightning_bolt': return tempestReady(s) && s.insanity >= 5
-      case 'elemental_blast': return s.insanity >= 8
+      case 'lightning_bolt': return tempestReady(s) && s.insanity >= 10
       default: return false
     }
   },
 
   priorityList: [
-    { abilityId: 'feral_spirits', text: 'On cooldown — wolves feed Maelstrom', when: s => s.cooldownRemains('feral_spirits') === 0 },
-    { abilityId: 'doom_winds', text: 'On cooldown — Windfury storm window', when: s => s.cooldownRemains('doom_winds') === 0 },
-    { abilityId: 'lightning_bolt', label: 'Tempest', icon: 'spell_nature_callstorm', text: 'Charged Tempest at 5+ Maelstrom', when: s => tempestReady(s) && s.insanity >= 5 },
-    { abilityId: 'elemental_blast', text: 'At 8-10 Maelstrom — never sit capped', when: s => s.insanity >= 8 && s.cooldownRemains('elemental_blast') === 0 },
-    { abilityId: 'lightning_bolt', text: 'At 8-10 Maelstrom when Elemental Blast is down' },
-    { abilityId: 'flame_shock', text: 'Keep the DoT rolling (refresh under 5.4s)' },
+    { abilityId: 'voltaic_blaze', text: 'On cooldown — applies Flame Shock; 2pc Fire Nova eruption', when: s => s.isUsable('voltaic_blaze') === true },
+    { abilityId: 'doom_winds', text: 'On cooldown — Windfury + Static Accumulation window', when: s => s.isUsable('doom_winds') === true },
+    { abilityId: 'ascendance', text: 'On cooldown — 2-minute burst; grants a Tempest', when: s => s.isUsable('ascendance') === true },
+    { abilityId: 'crash_lightning', text: 'Whenever available — 4pc Fire Nova charges make it hit hard', when: s => s.isUsable('crash_lightning') === true },
+    { abilityId: 'stormstrike', label: 'Windstrike', icon: 'ability_skyreach_four_wind', text: 'Fill Doom Winds / Ascendance — Thorim’s Invocation bolts', when: s => (doomUp(s) || ascUp(s)) && s.isUsable('stormstrike') === true },
+    { abilityId: 'lightning_bolt', label: 'Tempest', icon: 'spell_nature_callstorm', text: 'Charged Tempest at 10 Maelstrom Weapon', when: s => tempestReady(s) && s.insanity >= 10 },
+    { abilityId: 'lightning_bolt', text: 'Lightning Bolt at 10 Maelstrom Weapon — never overcap', when: s => !tempestReady(s) && s.insanity >= 10 },
     { abilityId: 'lava_lash', text: 'Hot Hand windows — spam it', when: s => s.auraRemains('player', 'hot_hand') > 0 },
-    { abilityId: 'stormstrike', text: 'On cooldown; Stormsurge procs reset it', when: s => s.cooldownRemains('stormstrike') === 0 || s.auraRemains('player', 'stormsurge') > 0 },
-    { abilityId: 'lava_lash', text: 'On cooldown' },
+    { abilityId: 'stormstrike', text: 'On cooldown — main filler' },
+    { abilityId: 'lava_lash', text: 'Last-resort builder' },
+    { abilityId: 'lightning_bolt', text: 'At 5+ Maelstrom Weapon when everything else is down' },
   ],
 
   policy: (s) => {
     const msw = s.insanity
-    const fsRemains = s.auraRemains('target', 'flame_shock')
 
-    if (fsRemains <= 0 && s.isUsable('flame_shock') === true) return 'flame_shock'
-    if (s.cooldownRemains('feral_spirits') === 0) return 'feral_spirits'
-    if (s.cooldownRemains('doom_winds') === 0) return 'doom_winds'
-    if (tempestReady(s) && msw >= 5) return 'lightning_bolt'
-    if (msw >= 8) {
-      if (s.isUsable('elemental_blast') === true && s.timeToUsable('elemental_blast') === 0) return 'elemental_blast'
-      return 'lightning_bolt'
-    }
-    if (fsRemains < 5.4 && s.isUsable('flame_shock') === true) return 'flame_shock'
-    if (s.auraRemains('player', 'hot_hand') > 0) return 'lava_lash'
-    if (s.cooldownRemains('stormstrike') === 0 || s.auraRemains('player', 'stormsurge') > 0) return 'stormstrike'
-    if (s.cooldownRemains('lava_lash') === 0) return 'lava_lash'
+    if (s.isUsable('voltaic_blaze') === true) return 'voltaic_blaze'
+    if (s.isUsable('doom_winds') === true) return 'doom_winds'
+    if (s.isUsable('ascendance') === true) return 'ascendance'
+    if (s.isUsable('crash_lightning') === true) return 'crash_lightning'
+    if ((doomUp(s) || ascUp(s)) && s.isUsable('stormstrike') === true) return 'stormstrike'
+    if (msw >= 10) return 'lightning_bolt'
+    if (s.auraRemains('player', 'hot_hand') > 0 && s.isUsable('lava_lash') === true) return 'lava_lash'
+    if (s.isUsable('stormstrike') === true) return 'stormstrike'
+    if (s.isUsable('lava_lash') === true) return 'lava_lash'
+    if (msw >= 5) return 'lightning_bolt'
     return null // pool Maelstrom for the next spender
   },
 
   equivalentChoices: (_s, pressed, oracle) => {
-    const spenders = ['lightning_bolt', 'elemental_blast']
-    const strikes = ['stormstrike', 'lava_lash']
-    const sets = [spenders, strikes]
-    return sets.some(set => set.includes(pressed) && set.includes(oracle))
+    const strikes = ['stormstrike', 'lava_lash', 'crash_lightning']
+    return strikes.includes(pressed) && strikes.includes(oracle)
   },
 }

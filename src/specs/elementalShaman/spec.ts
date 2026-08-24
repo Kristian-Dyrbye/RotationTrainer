@@ -2,15 +2,24 @@ import type { SimAPI, SpecConfig } from '../../engine/types'
 
 /**
  * Elemental Shaman — patch 12.1.0 (Midnight, Season 2), Farseer raid ST build
- * with the S2 tier 2pc+4pc. Built from the simc `midnight` APL/source and
- * Icy Veins/Method 12.1 guides (post-rework: Icefury, Primordial Wave, manual
- * elementals all removed; Voltaic Blaze added; overloads rebased to 25%).
+ * with the S2 "Ophidian Oracle's Prophecy" tier 2pc+4pc.
+ * Sources (verified 2026-08-24):
+ *  - Icy Veins rotation: icy-veins.com/wow/elemental-shaman-pve-dps-rotation-cooldowns-abilities
+ *  - Icy Veins builds (talent string): icy-veins.com/wow/elemental-shaman-pve-dps-spec-builds-talents
+ *  - Method: method.gg/guides/elemental-shaman/playstyle-and-rotation
+ * (post-rework: Icefury, Primordial Wave, manual elementals all removed;
+ * Voltaic Blaze added; overloads rebased to 25%).
  *
  * Talent assumptions: Elemental Blast + Eye of the Storm (cost 80), Swelling
  * Maelstrom (cap 150), Echo of the Elements (2 LvB charges), Master of the
  * Elements, Power of the Maelstrom, Crackling Fury, Call of Fire/Fury of the
  * Storms (elementals fold into Asc/SK), Apex: Feedback Loop 3/3.
- * APPROX-flagged numbers need SpellQuery verification. Mastery is fixed at
+ * S2 tier: 2pc Earth Shock/Earthquake/Elemental Blast +25%; 4pc when
+ * Stormkeeper or Ascendance fades, the next 2 bolts / Lava Bursts gain +25%
+ * (Flowing Elements, stacking to 4 when both fade) and the next spender is
+ * free (Overcharge!).
+ * APPROX-flagged numbers need SpellQuery verification (ancestor pulses,
+ * Lava Surge ramp, proc rates, Voltaic Blaze cooldown). Mastery is fixed at
  * 25% (no mastery input yet); Ancestors are modeled as damage pulses.
  */
 
@@ -83,6 +92,15 @@ export const elementalShaman: SpecConfig = {
   resourceMax: 150, // Swelling Maelstrom
   startingResource: 0,
 
+  source: {
+    guideUrl: 'https://www.wowhead.com/guide/classes/shaman/elemental/rotation-cooldowns-pve-dps',
+    buildName: 'Farseer Raid ST',
+    heroTalent: 'Farseer',
+    // Icy Veins "Elemental Single Target - Farseer" import code
+    talentString: 'CYQAAAAAAAAAAAAAAAAAAAAAAAAAAAzMbLzMmZmZZZZMMjBAAAAsYmNYADY2YCMLAwsNzMjZ2WmJMzsxyMzMjZwyMWMzwMLDAYAgZGDDD',
+    retrieved: '2026-08-24',
+  },
+
   auras: [
     {
       id: 'flame_shock',
@@ -114,11 +132,11 @@ export const elementalShaman: SpecConfig = {
     { id: 'lava_surge', name: 'Lava Surge', icon: 'spell_shaman_lavasurge', duration: 10 },
     { id: 'power_of_the_maelstrom', name: 'Power of the Maelstrom', icon: 'spell_nature_stormreach', duration: 20, maxStacks: 2 },
     { id: 'stormkeeper', name: 'Stormkeeper', icon: 'ability_thunderking_lightningwhip', duration: 15, maxStacks: 2,
-      onExpire: (s) => { s.applyAura('player', 'flowing_elements', { stacks: 4 }); s.applyAura('player', 'overcharge') } },
+      onExpire: (s) => { s.applyAura('player', 'flowing_elements', { stacks: 2 }); s.applyAura('player', 'overcharge') } },
     { id: 'ascendance', name: 'Ascendance', icon: 'spell_fire_elementaldevastation', duration: 15,
-      onExpire: (s) => { s.applyAura('player', 'flowing_elements', { stacks: 4 }); s.applyAura('player', 'overcharge') } },
+      onExpire: (s) => { s.applyAura('player', 'flowing_elements', { stacks: 2 }); s.applyAura('player', 'overcharge') } },
     { id: 'ancestral_swiftness', name: 'Ancestral Swiftness', icon: 'inv_ability_farseershaman_ancestralswiftness', duration: 15 },
-    // S2 4pc: on SK/Asc fade — next 2-4 bolts +25%, next spender free
+    // S2 4pc: on SK/Asc fade — next 2 bolts/LvBs +25% (4 if both fade), next spender free
     { id: 'flowing_elements', name: 'Flowing Elements', icon: 'spell_nature_lightningoverload', duration: 20, maxStacks: 4 },
     { id: 'overcharge', name: 'Overcharge!', icon: 'spell_nature_wispsplode', duration: 20 },
   ],
@@ -284,11 +302,11 @@ export const elementalShaman: SpecConfig = {
   },
 
   priorityList: [
-    { abilityId: 'stormkeeper', text: 'On cooldown (hold if Ascendance is <10s away — pair them)', when: s => s.cooldownRemains('stormkeeper') === 0 },
+    { abilityId: 'stormkeeper', text: 'On cooldown, just before Ascendance (don’t hold it >10s)', when: s => s.cooldownRemains('stormkeeper') === 0 },
     { abilityId: 'ancestral_swiftness', text: 'On cooldown — free instant + Ancestor', when: s => s.cooldownRemains('ancestral_swiftness') === 0 },
-    { abilityId: 'voltaic_blaze', text: 'Preferred Flame Shock applicator when FS needs refreshing (MotE down)' },
-    { abilityId: 'flame_shock', text: 'Refresh in pandemic (<5.4s) if Voltaic Blaze is down, MotE down' },
-    { abilityId: 'ascendance', text: 'On cooldown (unless Stormkeeper is <15s away)', when: s => s.cooldownRemains('ascendance') === 0 },
+    { abilityId: 'ascendance', text: 'On cooldown, right after Stormkeeper', when: s => s.cooldownRemains('ascendance') === 0 },
+    { abilityId: 'voltaic_blaze', text: 'Preferred Flame Shock applicator when FS is under 6s (MotE down)' },
+    { abilityId: 'flame_shock', text: 'Refresh under 6s if Voltaic Blaze is down, MotE down' },
     { abilityId: 'elemental_blast', text: '4pc: free +25% cast when Flowing Elements + Overcharge! are up', when: s => s.auraRemains('player', 'overcharge') > 0 },
     { abilityId: 'lava_burst', text: 'When Master of the Elements is down and you won’t overcap Maelstrom' },
     { abilityId: 'elemental_blast', text: 'With MotE up, or within 15 Maelstrom of the cap — never overcap' },
@@ -301,18 +319,18 @@ export const elementalShaman: SpecConfig = {
     const gcd = s.gcdLength()
     const mote = s.auraRemains('player', 'master_of_the_elements') > 0
     const fsRemains = s.auraRemains('target', 'flame_shock')
-    const fsRefreshable = fsRemains < 5.4
+    const fsRefreshable = fsRemains < 6 // Icy Veins: refresh when ≤6s remain
     const deficit = 150 - s.insanity
     const skCd = s.cooldownRemains('stormkeeper')
     const ascCd = s.cooldownRemains('ascendance')
 
     if (skCd === 0 && (ascCd > 10 || ascCd < gcd)) return 'stormkeeper'
     if (s.cooldownRemains('ancestral_swiftness') === 0 && fsRemains > 0) return 'ancestral_swiftness'
+    if (ascCd === 0 && skCd > 15 && fsRemains > 0) return 'ascendance'
     if (!mote && fsRefreshable && ascCd > 5) {
       if (s.isUsable('voltaic_blaze') === true) return 'voltaic_blaze'
       return 'flame_shock'
     }
-    if (ascCd === 0 && skCd > 15 && fsRemains > 0) return 'ascendance'
     // 4pc free spender
     if (s.auraRemains('player', 'overcharge') > 0 && s.stacks('player', 'flowing_elements') > 0
       && s.isUsable('elemental_blast') === true) return 'elemental_blast'

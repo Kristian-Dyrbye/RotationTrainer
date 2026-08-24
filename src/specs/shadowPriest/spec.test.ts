@@ -70,21 +70,19 @@ describe('shadow priest mechanics', () => {
     sim.beginCombat()
     sim.press('voidform')
     sim.advance(2)
-    expect(sim.stacks('player', 'void_volley_charge')).toBe(3)
+    // 3 base uses + 2 from Improved Voidform
+    expect(sim.stacks('player', 'void_volley_charge')).toBe(5)
     expect(sim.auraRemains('player', 'voidform')).toBeGreaterThan(17)
     // pressing the same button now fires Void Volley — despite the 2min cooldown
     expect(sim.cooldownRemains('voidform')).toBeGreaterThan(100)
     expect(sim.press('voidform')).toBe('cast')
-    expect(sim.stacks('player', 'void_volley_charge')).toBe(2)
+    expect(sim.stacks('player', 'void_volley_charge')).toBe(4)
     expect(sim.insanity).toBeGreaterThanOrEqual(10)
     // the volley press did not touch the underlying voidform cooldown
     expect(sim.cooldownRemains('voidform')).toBeLessThan(119)
     expect(sim.cooldownRemains('voidform')).toBeGreaterThan(100)
     // spend the rest; the button reverts to Voidform (on cooldown)
-    sim.advance(sim.time + 2)
-    sim.press('voidform')
-    sim.advance(sim.time + 2)
-    sim.press('voidform')
+    for (let i = 0; i < 4; i++) { sim.advance(sim.time + 2); sim.press('voidform') }
     sim.advance(sim.time + 2)
     expect(sim.stacks('player', 'void_volley_charge')).toBe(0)
     expect(sim.press('voidform')).toBe('on cooldown')
@@ -96,8 +94,8 @@ describe('shadow priest mechanics', () => {
     sim.beginCombat()
     sim.press('voidform')
     sim.advance(2)
-    // burn the voidform charges
-    for (let i = 0; i < 3; i++) { sim.press('voidform'); sim.advance(sim.time + 2) }
+    // burn the voidform charges (3 base + 2 Improved Voidform)
+    for (let i = 0; i < 5; i++) { sim.press('voidform'); sim.advance(sim.time + 2) }
     expect(sim.stacks('player', 'void_volley_charge')).toBe(0)
     sim.press('tentacle_slam') // S2 4pc grants a free Void Volley
     sim.advance(sim.time + 2)

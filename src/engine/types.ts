@@ -148,11 +148,25 @@ export interface SimAPI {
   readonly gcdReadyAt: number
 }
 
+export interface GuideSource {
+  /** Wowhead guide the build + rotation are taken from */
+  guideUrl: string
+  /** the guide's recommended build this spec models (e.g. "Stormbringer Raid ST") */
+  buildName: string
+  heroTalent: string
+  /** Blizzard talent loadout import string, when the guide publishes one */
+  talentString?: string
+  /** ISO date the guide content was last verified */
+  retrieved: string
+}
+
 export interface SpecConfig {
   name: string
   specId: string
   /** icon for the spec badge / picker */
   specIcon?: string
+  /** where this spec's build + rotation come from (shown in Setup) */
+  source?: GuideSource
   resourceName: string
   resourceMax: number
   startingResource?: number

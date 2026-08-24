@@ -73,6 +73,8 @@ body {
 .prio-row .prio-cond { display: block; font-size: 0.72rem; color: var(--ink-soft); line-height: 1.25; }
 .prio-row.hl { background: rgba(224, 180, 88, 0.14); outline: 1px solid var(--gold); }
 .prio-row.hl .prio-name { color: var(--gold); }
+.prio-source { margin-top: 0.7rem; font-size: 0.72rem; }
+.prio-source a { color: var(--gold); }
 
 .stat-input {
   width: 4.5rem;

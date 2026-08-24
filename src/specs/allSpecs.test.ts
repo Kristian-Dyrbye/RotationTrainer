@@ -62,6 +62,14 @@ for (const spec of specs) {
       expect(high.totalDamage).toBeGreaterThan(low.totalDamage * 1.1)
     })
 
+    it('cites its Wowhead source build', () => {
+      expect(spec.source, 'source').toBeDefined()
+      expect(spec.source!.guideUrl).toMatch(/^https:\/\/www\.wowhead\.com\/guide\/classes\//)
+      expect(spec.source!.buildName.length).toBeGreaterThan(0)
+      expect(spec.source!.heroTalent.length).toBeGreaterThan(0)
+      expect(spec.source!.retrieved).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+    })
+
     it('has a priority list and matching action bar entries', () => {
       expect(spec.priorityList?.length ?? 0).toBeGreaterThan(4)
       for (const row of spec.priorityList ?? []) {

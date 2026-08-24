@@ -22,6 +22,7 @@ export function SetupScreen({ spec, config, onStart, lastReport, onChangeSpec }:
   const [liveHints, setLiveHints] = useState(config.liveHints)
   const [binding, setBinding] = useState<number | null>(null)
   const [dragFrom, setDragFrom] = useState<number | null>(null)
+  const [copied, setCopied] = useState(false)
   const [showIntro, setShowIntro] = useState(() => {
     try { return localStorage.getItem('rt-intro-dismissed') !== '1' } catch { return true }
   })
@@ -115,6 +116,38 @@ export function SetupScreen({ spec, config, onStart, lastReport, onChangeSpec }:
             <div className="row">
               <button className="chip active" onClick={dismissIntro}>Got it — don't show this again</button>
             </div>
+          </section>
+        )}
+
+        {spec.source && (
+          <section className="panel">
+            <h2>Build — from Wowhead</h2>
+            <p>
+              <strong>{spec.source.buildName}</strong> · {spec.source.heroTalent} hero talents
+              {' · '}
+              <a href={spec.source.guideUrl} target="_blank" rel="noreferrer">Open the Wowhead guide ↗</a>
+            </p>
+            <p className="hint">
+              The rotation in the sidebar mirrors this guide's single-target priority
+              (verified {spec.source.retrieved}). Set your character up with the same build for the
+              trainer to match the game.
+            </p>
+            {spec.source.talentString && (
+              <div className="row">
+                <button
+                  className="chip"
+                  onClick={() => {
+                    navigator.clipboard?.writeText(spec.source!.talentString!).then(() => {
+                      setCopied(true)
+                      setTimeout(() => setCopied(false), 2000)
+                    })
+                  }}
+                >
+                  {copied ? 'Copied!' : 'Copy talent import string'}
+                </button>
+                <span className="hint">Paste it in the in-game talent frame (Import Loadout).</span>
+              </div>
+            )}
           </section>
         )}
 

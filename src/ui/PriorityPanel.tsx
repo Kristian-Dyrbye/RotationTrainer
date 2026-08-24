@@ -38,6 +38,12 @@ export function PriorityPanel({ spec, sim, live }: {
           )
         })}
       </ol>
+      {spec.source && (
+        <p className="prio-source hint">
+          Per the <a href={spec.source.guideUrl} target="_blank" rel="noreferrer">Wowhead guide</a>
+          {' '}({spec.source.heroTalent}) · checked {spec.source.retrieved}
+        </p>
+      )}
     </aside>
   )
 }
