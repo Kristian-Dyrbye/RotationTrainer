@@ -67,7 +67,7 @@ export const fireMage: SpecConfig = {
   auras: [
     { id: 'heating_up', name: 'Heating Up', icon: 'ability_mage_hotstreak', duration: 10 },
     { id: 'hot_streak', name: 'Hot Streak!', icon: 'ability_mage_hotstreak', duration: 15 },
-    { id: 'burden_of_power', name: 'Burden of Power', icon: 'inv_10_enchanting2_magicswirl_orange', duration: 30 },
+    { id: 'burden_of_power', name: 'Burden of Power', icon: 'spell_mage_flameorb', duration: 30 },
     { id: 'combustion', name: 'Combustion', icon: 'spell_fire_sealoffire', duration: 12 },
     {
       id: 'ignite', name: 'Ignite', icon: 'spell_fire_incinerate', duration: 9, debuff: true,

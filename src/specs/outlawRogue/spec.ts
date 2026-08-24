@@ -89,7 +89,7 @@ export const outlawRogue: SpecConfig = {
     { id: 'combo_points', name: 'Combo Points', icon: 'ability_rogue_eviscerate', duration: Infinity, maxStacks: 5 },
     { id: 'opportunity', name: 'Opportunity', icon: 'ability_rogue_pistolshot', duration: 12 },
     { id: 'adrenaline_rush', name: 'Adrenaline Rush', icon: 'spell_shadow_shadowworddominate', duration: 20 },
-    { id: 'fatebound_coin', name: 'Fatebound: Heads', icon: 'inv_ability_fateboundrogue_inertcoin', duration: 15, maxStacks: 5 },
+    { id: 'fatebound_coin', name: 'Fatebound: Heads', icon: 'inv_misc_coin_01', duration: 15, maxStacks: 5 },
     { id: 'between_the_eyes', name: 'Between the Eyes', icon: 'inv_weapon_rifle_01', duration: 15, debuff: true },
     { id: 'broadside', name: 'Broadside', icon: 'ability_rogue_rollthebones01', duration: 30 },
     { id: 'skull_and_crossbones', name: 'Skull and Crossbones', icon: 'ability_rogue_rollthebones02', duration: 30 },

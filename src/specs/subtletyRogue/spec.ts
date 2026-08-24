@@ -86,7 +86,7 @@ export const subtletyRogue: SpecConfig = {
     { id: 'shadow_dance', name: 'Shadow Dance', icon: 'ability_rogue_shadowdance', duration: 8 },
     { id: 'symbols_of_death', name: 'Symbols of Death', icon: 'spell_shadow_rune', duration: 10 },
     { id: 'shadow_blades', name: 'Shadow Blades', icon: 'inv_knife_1h_grimbatolraid_d_03', duration: 16 },
-    { id: 'darkest_night', name: 'Darkest Night', icon: 'inv_ability_deathstalkerrogue_darkestnight', duration: 20 },
+    { id: 'darkest_night', name: 'Darkest Night', icon: 'ability_rogue_envelopingshadows', duration: 20 },
     { id: 'deathstalkers_mark', name: "Deathstalker's Mark", icon: 'inv_ability_deathstalkerrogue_deathstalkersmark', duration: 60, maxStacks: 3, debuff: true },
     {
       id: 'rupture', name: 'Rupture', icon: 'ability_rogue_rupture', duration: 24, pandemic: true, debuff: true,

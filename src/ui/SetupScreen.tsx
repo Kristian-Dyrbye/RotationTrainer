@@ -22,7 +22,15 @@ export function SetupScreen({ spec, config, onStart, lastReport, onChangeSpec }:
   const [liveHints, setLiveHints] = useState(config.liveHints)
   const [binding, setBinding] = useState<number | null>(null)
   const [dragFrom, setDragFrom] = useState<number | null>(null)
+  const [showIntro, setShowIntro] = useState(() => {
+    try { return localStorage.getItem('rt-intro-dismissed') !== '1' } catch { return true }
+  })
   const keyLabel = useKeyLabels()
+
+  const dismissIntro = () => {
+    try { localStorage.setItem('rt-intro-dismissed', '1') } catch { /* private mode */ }
+    setShowIntro(false)
+  }
 
   // while a slot is armed, the next non-modifier keypress (with any Ctrl/Alt/Shift held) binds it
   useEffect(() => {
@@ -66,9 +74,49 @@ export function SetupScreen({ spec, config, onStart, lastReport, onChangeSpec }:
               <h1>{spec.name}</h1>
               <p className="sub">Rotation Trainer · patch 12.1.0 · single-target dummy</p>
             </div>
-            <button className="chip" style={{ marginLeft: 'auto' }} onClick={onChangeSpec}>Change spec</button>
+            <div style={{ marginLeft: 'auto', display: 'flex', gap: '0.5rem' }}>
+              <button className="chip" onClick={() => setShowIntro(v => !v)}>How it works</button>
+              <button className="chip" onClick={onChangeSpec}>Change spec</button>
+            </div>
           </div>
         </header>
+
+        {showIntro && (
+          <section className="panel intro-panel">
+            <h2>Welcome — how the trainer works</h2>
+            <ol className="intro-steps">
+              <li>
+                <strong>Learn the rotation.</strong> The sidebar on the left is this spec's priority list —
+                the same logic the scoring oracle plays. Read it top to bottom: the first matching row is
+                the right button to press.
+              </li>
+              <li>
+                <strong>Set up your bar.</strong> Drag spells between slots to mirror your in-game layout —
+                keybinds stay with the slot, exactly like in game. Click a slot, then press any key or
+                combo (Shift+1, Ctrl+Q, …) to rebind it.
+              </li>
+              <li>
+                <strong>Match your character.</strong> Enter Haste and Crit from your character sheet.
+                They drive the sim for real: cast speed, resource generation, and proc rates all scale —
+                for you and the oracle alike, so the score stays fair.
+              </li>
+              <li>
+                <strong>Train.</strong> Pick a fight length and press <em>Enter Combat</em> — the dummy
+                fight starts on your first keypress. Watch for glowing buttons: those are procs asking to
+                be spent. Turn on <em>Live hints</em> if you want the trainer to highlight the oracle's
+                next press while you learn.
+              </li>
+              <li>
+                <strong>Read your debrief.</strong> Afterwards you get a 0–100 score against the oracle on
+                the same procs and RNG, plus a per-cast Perfect/Good/Miss timeline, dead-GCD time, and
+                resource waste — the fastest fixes usually hide in the Miss rows.
+              </li>
+            </ol>
+            <div className="row">
+              <button className="chip active" onClick={dismissIntro}>Got it — don't show this again</button>
+            </div>
+          </section>
+        )}
 
         <section className="panel">
           <h2>Action bar &amp; keybinds</h2>

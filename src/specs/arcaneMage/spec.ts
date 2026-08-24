@@ -58,7 +58,7 @@ export const arcaneMage: SpecConfig = {
     { id: 'nether_precision', name: 'Nether Precision', icon: 'spell_arcane_blast_nightborne', duration: 12, maxStacks: 2 },
     { id: 'arcane_surge', name: 'Arcane Surge', icon: 'ability_mage_arcanesurge', duration: 15 },
     {
-      id: 'touch_of_the_magi', name: 'Touch of the Magi', icon: 'ability_mage_touchofthemagi',
+      id: 'touch_of_the_magi', name: 'Touch of the Magi', icon: 'spell_arcane_arcane02',
       duration: 10, debuff: true,
       onExpire: (s, aura) => {
         const boom = (aura.data.bank ?? 0) * TOUCH_PCT
@@ -132,7 +132,7 @@ export const arcaneMage: SpecConfig = {
     {
       id: 'touch_of_the_magi',
       name: 'Touch of the Magi',
-      icon: 'ability_mage_touchofthemagi',
+      icon: 'spell_arcane_arcane02',
       spellId: 321507,
       cooldown: 45,
       onResolve: (s) => {

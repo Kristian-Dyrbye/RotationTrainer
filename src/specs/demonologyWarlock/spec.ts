@@ -68,7 +68,7 @@ export const demonologyWarlock: SpecConfig = {
 
   auras: [
     { id: 'demonic_core', name: 'Demonic Core', icon: 'warlock_spelldrain', duration: 20, maxStacks: 4 },
-    { id: 'demonic_art', name: 'Demonic Art', icon: 'inv_ability_diabolistwarlock_demonicart', duration: 30 },
+    { id: 'demonic_art', name: 'Demonic Art', icon: 'ability_warlock_demonicpower', duration: 30 },
     { id: 'demonic_tyrant', name: 'Demonic Tyrant', icon: 'inv_summondemonictyrant', duration: 15 },
   ],
 

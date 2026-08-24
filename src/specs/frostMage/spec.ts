@@ -125,7 +125,7 @@ export const frostMage: SpecConfig = {
     {
       id: 'glacial_spike',
       name: 'Glacial Spike',
-      icon: 'spell_frost_frozenorb',
+      icon: 'spell_frost_frozencore',
       spellId: 199786,
       castTime: 2.75,
       cost: 5,
@@ -144,7 +144,7 @@ export const frostMage: SpecConfig = {
     {
       id: 'frozen_orb',
       name: 'Frozen Orb',
-      icon: 'spell_frost_frozenorb02',
+      icon: 'spell_frost_frozenorb',
       spellId: 84714,
       cooldown: 60,
       onResolve: (s) => {

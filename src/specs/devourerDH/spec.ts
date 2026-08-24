@@ -51,7 +51,7 @@ function mawCost(s: SimAPI): number {
 export const devourerDH: SpecConfig = {
   name: 'Devourer Demon Hunter',
   specId: 'dh-devourer',
-  specIcon: 'inv12_ability_demonhunter_devourerspec',
+  specIcon: 'spell_shadow_devouringplague',
   resourceName: 'Hunger',
   resourceMax: 100,
   startingResource: 0,
@@ -68,8 +68,8 @@ export const devourerDH: SpecConfig = {
   auras: [
     { id: 'soul_fragments', name: 'Soul Fragments', icon: 'spell_shadow_soulgem', duration: 30, maxStacks: 5 },
     { id: 'hollow_hunger', name: 'Hollow Hunger', icon: 'spell_shadow_requiem', duration: 12 },
-    { id: 'ravenous_form', name: 'Ravenous Form', icon: 'inv12_ability_demonhunter_ravenousform', duration: 18 },
-    { id: 'gaping_maw', name: 'Gaping Maw', icon: 'inv12_ability_demonhunter_abyssalmaw', duration: 12, debuff: true },
+    { id: 'ravenous_form', name: 'Ravenous Form', icon: 'ability_demonhunter_metamorphasisdps', duration: 18 },
+    { id: 'gaping_maw', name: 'Gaping Maw', icon: 'spell_shadow_shadesofdarkness', duration: 12, debuff: true },
     {
       id: 'wasting_curse', name: 'Wasting Curse', icon: 'spell_shadow_curseofsargeras', duration: 18, pandemic: true, debuff: true,
       tick: {
@@ -109,7 +109,7 @@ export const devourerDH: SpecConfig = {
     {
       id: 'consuming_maw',
       name: 'Consuming Maw',
-      icon: 'spell_shadow_gluttony',
+      icon: 'spell_shadow_burningspirit',
       spellId: 1240007,
       cost: 50,
       costMod: mawCost,
@@ -146,7 +146,7 @@ export const devourerDH: SpecConfig = {
     {
       id: 'abyssal_maw',
       name: 'Abyssal Maw',
-      icon: 'inv12_ability_demonhunter_abyssalmaw',
+      icon: 'spell_shadow_shadesofdarkness',
       spellId: 1240013,
       cooldown: 90,
       onResolve: (s) => {
@@ -158,7 +158,7 @@ export const devourerDH: SpecConfig = {
     {
       id: 'ravenous_form',
       name: 'Ravenous Form',
-      icon: 'inv12_ability_demonhunter_ravenousform',
+      icon: 'ability_demonhunter_metamorphasisdps',
       spellId: 1240016,
       cooldown: 120,
       offGcd: true,

@@ -2,6 +2,7 @@ import type { SpecConfig } from '../engine/types'
 import { shadowPriest } from './shadowPriest/spec'
 import { balanceDruid } from './balanceDruid/spec'
 import { elementalShaman } from './elementalShaman/spec'
+import { enhancementShaman } from './enhancementShaman/spec'
 import { unholyDK } from './unholyDK/spec'
 import { frostDK } from './frostDK/spec'
 import { frostMage } from './frostMage/spec'
@@ -30,6 +31,7 @@ export const specs: SpecConfig[] = [
   shadowPriest,
   balanceDruid,
   elementalShaman,
+  enhancementShaman,
   unholyDK,
   frostDK,
   frostMage,
