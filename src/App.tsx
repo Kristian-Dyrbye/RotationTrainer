@@ -67,10 +67,11 @@ export default function App() {
   const [config, setConfig] = useState<TrainingConfig | null>(() => (spec ? loadConfig(spec) : null))
   const [report, setReport] = useState<ScoreReport | null>(null)
 
-  const pickSpec = (id: string) => {
-    const b = localStorage.getItem(`rt-${id}-build`)
+  const pickSpec = (id: string, pickedBuild?: string) => {
+    const b = pickedBuild ?? localStorage.getItem(`rt-${id}-build`)
     const s = specById(id, b ?? undefined)!
     localStorage.setItem('rt-spec', id)
+    if (pickedBuild) localStorage.setItem(`rt-${id}-build`, pickedBuild)
     setSpecId(id)
     setBuildId(b)
     setConfig(loadConfig(s))

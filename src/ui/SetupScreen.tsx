@@ -75,7 +75,7 @@ export function SetupScreen({ spec, config, onStart, lastReport, onChangeSpec, v
           <div className="spec-badge">
             <img src={iconUrl(spec.specIcon ?? 'inv_misc_questionmark')} alt="" />
             <div>
-              <h1>{spec.name}</h1>
+              <h1>{spec.name}{spec.source ? ` — ${spec.source.heroTalent}` : ''}</h1>
               <p className="sub">Rotation Trainer · patch 12.1.0 · single-target dummy</p>
             </div>
             <div style={{ marginLeft: 'auto', display: 'flex', gap: '0.5rem' }}>

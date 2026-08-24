@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import type { SpecConfig } from '../engine/types'
-import { specs } from '../specs'
+import { specs, buildIdOf } from '../specs'
 import { iconUrl } from './icons'
 
 type Role = 'melee' | 'ranged'
@@ -53,7 +53,7 @@ function shortName(spec: SpecConfig): string {
   return spec.name
 }
 
-export function SpecPicker({ onPick }: { onPick: (specId: string) => void }) {
+export function SpecPicker({ onPick }: { onPick: (specId: string, buildId?: string) => void }) {
   const [role, setRole] = useState<Role | null>(null)
   const [cls, setCls] = useState<string | null>(null)
 
@@ -64,7 +64,7 @@ export function SpecPicker({ onPick }: { onPick: (specId: string) => void }) {
 
   const pickClass = (id: string) => {
     const specsHere = inRole.filter(s => classOf(s) === id)
-    if (specsHere.length === 1) onPick(specsHere[0].specId) // single spec: no extra step
+    if (specsHere.length === 1) onPick(specsHere[0].specId, buildIdOf(specsHere[0]))
     else setCls(id)
   }
 
@@ -100,7 +100,7 @@ export function SpecPicker({ onPick }: { onPick: (specId: string) => void }) {
                 <img src={iconUrl(CLASSES[id].icon)} alt="" />
                 <span>{CLASSES[id].name}</span>
                 <span className="hint">
-                  {inRole.filter(s => classOf(s) === id).map(shortName).join(' · ')}
+                  {[...new Set(inRole.filter(s => classOf(s) === id).map(shortName))].join(' · ')}
                 </span>
               </button>
             ))}
@@ -113,9 +113,13 @@ export function SpecPicker({ onPick }: { onPick: (specId: string) => void }) {
         <>
           <div className="spec-grid">
             {inClass.map(s => (
-              <button key={s.specId} className="spec-card" onClick={() => onPick(s.specId)}>
+              <button
+                key={`${s.specId}--${buildIdOf(s)}`}
+                className="spec-card"
+                onClick={() => onPick(s.specId, buildIdOf(s))}
+              >
                 <img src={iconUrl(s.specIcon ?? 'inv_misc_questionmark')} alt="" />
-                <span>{s.name}</span>
+                <span>{s.name}{s.source ? ` — ${s.source.heroTalent}` : ''}</span>
               </button>
             ))}
           </div>
